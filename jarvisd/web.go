@@ -165,7 +165,7 @@ func (w *Web) Serve(addr string) error {
 func (w *Web) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		h := rw.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://i.ytimg.com https://avatars.yandex.net; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://i.ytimg.com https://avatars.yandex.net https://i.scdn.co; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
