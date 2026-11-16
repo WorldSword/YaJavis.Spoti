@@ -118,10 +118,11 @@ export function plCard(x) {
     <div class="cn-h"><span class="char-av cn-av">${plIcon(p.icon)}</span><h2>${esc(p.name)}</h2><span class="spacer"></span>
       <label class="sw" data-tip="${p.enabled ? "Выключить" : "Включить"}"><input type="checkbox" data-pl-on="${esc(p.id)}"${p.enabled ? " checked" : ""}><span class="tr"></span></label></div>
     <p class="cn-t">${esc(p.description || "")}</p>${meta}
-    <div class="cn-f">${state}<span class="spacer"></span>
+    <div class="cn-f plg-controls${upd ? " plg-has-update" : ""}">${state}<div class="plg-actions">
       ${upd ? `<button class="btn sm primary" type="button" data-pl-update="${esc(p.id)}">Обновить до ${esc(x.version)}</button>` : ""}
+      <div class="plg-edit-actions">
       ${(p.settings || []).length ? `<button class="btn sm" type="button" data-pl-set="${esc(p.id)}">${icon("tune")}Настроить</button>` : ""}
-      <button class="btn sm ghost danger" type="button" data-pl-del="${esc(p.id)}" aria-label="Удалить" data-tip="Удалить">${icon("x")}</button></div>
+      <button class="btn sm ghost danger" type="button" data-pl-del="${esc(p.id)}" aria-label="Удалить" data-tip="Удалить">${icon("x")}</button></div></div></div>
   </article>`;
 }
 

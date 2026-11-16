@@ -6,11 +6,10 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/xtls/xray-core/core"
 )
 
 type netService struct {
@@ -87,7 +86,7 @@ func (p *Proxy) viaVPN(svc string) bool {
 	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.inst != nil
+	return p.link != ""
 }
 
 // DialFor — соединение для подключения svc: через VPN или напрямую, по его галочке.
@@ -106,8 +105,8 @@ func (p *Proxy) ClientFor(svc string, timeout time.Duration) *http.Client {
 }
 
 type servicePool struct {
-	inst *core.Instance
-	t    *http.Transport
+	route string
+	t     *http.Transport
 }
 
 type serviceTransport struct {
@@ -122,32 +121,29 @@ func (t serviceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // Route selection happens for every request, including clients kept by a service.
 // A route change retires the old pool; its in-flight requests can still finish.
 func (p *Proxy) servicePool(svc string) *http.Transport {
-	use := p.use == nil || p.use(svc)
+	route, tun, why := p.route(svc)
 	p.poolMu.Lock()
 	defer p.poolMu.Unlock()
-	var inst *core.Instance
-	if use {
-		p.mu.RLock()
-		inst = p.inst
-		p.mu.RUnlock()
-	}
 	if old, ok := p.transports[svc]; ok {
-		if old.inst == inst {
+		if old.route == route {
 			return old.t
 		}
 		old.t.CloseIdleConnections()
 	}
 	t := p.TransportFor(svc)
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if inst == nil {
+		if why != "" {
+			return nil, errors.New(why)
+		}
+		if tun == nil {
 			return directDialer.DialContext(ctx, network, addr)
 		}
-		return dialInstance(ctx, inst, network, addr)
+		return dialTunnel(ctx, tun, network, addr)
 	}
 	if p.transports == nil {
 		p.transports = make(map[string]servicePool)
 	}
-	p.transports[svc] = servicePool{inst, t}
+	p.transports[svc] = servicePool{route, t}
 	return t
 }
 

@@ -16,7 +16,8 @@ func elevenCLI() error {
 		return err
 	}
 	cfg := store.Get()
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	if err := proxy.Apply(cfg.Vless); err != nil {
 		return err
 	}

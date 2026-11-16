@@ -14,7 +14,8 @@ func probeElevenNew() error {
 	}
 	cfg := store.Get()
 	p := cfg.ActiveProfile()
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	if err = proxy.Apply(cfg.Vless); err != nil {
 		return err
 	}

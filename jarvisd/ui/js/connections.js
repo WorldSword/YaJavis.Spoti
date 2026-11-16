@@ -227,7 +227,7 @@ export function connDefs() {
       drop: "" },
     { id: "vpn", group: "net", icon: "shield", name: "VPN для Джарвиса", about: "Через VPN идёт только сам Джарвис, Алиса — всегда напрямую. Что именно пускать через VPN — галочки ниже",
       on: !!v.set && !v.error, bad: !!v.error, need: !v.set, state: v.set ? (v.error ? "ошибка" : esc(v.name || v.host)) : "не задан",
-      body: `${v.set ? `<div class="vpn ${v.error ? "bad" : "ok"}"><b>${esc(v.name || v.host)}</b><small>${esc(v.host)}:${esc(v.port)} · ${esc(v.network)} + ${esc(v.security)}</small></div>` : `<p class="note">Пока не задан — колонка ходит в интернет напрямую. Вставьте ссылку vless://… из вашего VPN (3x-ui, Marzban, Hiddify и т. п.).</p>`}
+      body: `<p class="note">Туннель работает через отдельный <a href="#plugins">плагин VPN</a>. Сначала установите и включите его, затем сохраните ссылку.</p>${v.set && v.host ? `<div class="vpn ${v.error ? "bad" : "ok"}"><b>${esc(v.name || v.host)}</b><small>${esc(v.host)}:${esc(v.port)} · ${esc(v.network)} + ${esc(v.security)}</small></div>` : v.set ? `<p class="err">${esc(v.error || "VPN запускается…")}</p>` : `<p class="note">Пока не задан — колонка ходит в интернет напрямую. Вставьте ссылку vless://… из вашего VPN (3x-ui, Marzban, Hiddify и т. п.).</p>`}
         ${v.error ? `<p class="err">${esc(v.error)}</p>` : ""}
         <textarea id="vless" class="code" placeholder="vless://…" spellcheck="false" aria-label="Ссылка VLESS"></textarea>
         <div class="row"><button class="btn primary" id="vless-save">${v.set ? "Заменить ссылку" : "Сохранить ссылку"}</button><span class="spacer"></span><button class="btn" data-net>Проверить связь</button></div>

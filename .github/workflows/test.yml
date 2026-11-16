@@ -21,9 +21,10 @@ jobs:
           (cd hardware && go test ./...)
           (cd installer/soloist && go test ./...)
           (cd pluginsdk && go vet ./...)
+          (cd plugins/vpn/src && go vet ./... && go test -race ./...)
           go vet scripts/pack-plugins.go
       - name: Race detector
-        run: cd jarvisd && go test -race -run 'Test(PlayerConcurrent|SettingsSnapshot|STT|ServiceHTTPPool|TrainingExport|YouTubeWarm|MiotTypes|AliceMisses|JSPlugin|NativePlugin|PluginsEnsure|BrokenPlugin|OfficialPlugins|Preview|Jitter)' ./...
+        run: cd jarvisd && go test -race -run 'Test(PlayerConcurrent|SettingsSnapshot|STT|ServiceHTTPPool|TrainingExport|YouTubeWarm|MiotTypes|AliceMisses|JSPlugin|NativePlugin|PluginsEnsure|BrokenPlugin|OfficialPlugins|PluginUpload|Preview|Jitter|VPN)' ./...
       - name: Panel modules
         run: |
           for f in jarvisd/ui/js/*.js; do cp "$f" /tmp/check.mjs && node --check /tmp/check.mjs || exit 1; done

@@ -1,6 +1,8 @@
 {
   "api": 1,
   "plugins": [
+    {"id":"vpn","category":"system","name":"VPN (VLESS)","kind":"native","version":"1.0.0","icon":"shield","recommended":true,
+     "provides":["vpn"],"auto":{"settings":["vless"]},"description":"Отдельный туннель Xray для выбранных подключений. Без VPN ядро работает без этой зависимости."},
     {"id": "weather", "category": "info", "name": "Погода", "kind": "js", "version": "1.0.0", "icon": "cloud", "recommended": true,
      "description": "Погода сейчас и на три дня по Open-Meteo, без ключей."},
     {"id": "currency", "category": "info", "name": "Курсы валют", "kind": "js", "version": "1.0.0", "icon": "bolt",

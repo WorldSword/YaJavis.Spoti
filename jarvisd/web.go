@@ -184,11 +184,13 @@ func (w *Web) guard(next http.Handler) http.Handler {
 		switch r.URL.Path {
 		case "/api/update/upload": // новая версия jarvisd (~30 МБ)
 			limit, long = 80<<20, true
+		case "/api/plugins/upload":
+			limit, long = pluginZipMax+1, true
 		case "/api/train/model":
 			limit = 4 << 20
 		case "/api/youtube":
 			limit = 1 << 20
-		case "/api/music", "/api/update/install", "/api/train/download":
+		case "/api/music", "/api/update/install", "/api/train/download", "/api/plugins/install":
 			long = true
 		}
 		if long { // загрузка, скачивание или поиск на YouTube дольше обычных 30/60 с
@@ -955,13 +957,8 @@ func (w *Web) putVless(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	link := strings.TrimSpace(req.Link)
-	if link != "" {
-		if _, err := ParseVless(link); err != nil {
-			bad(rw, err.Error())
-			return
-		}
-	}
 	if err := w.proxy.Apply(link); err != nil {
+		_ = w.proxy.Apply(w.store.Get().Vless)
 		bad(rw, err.Error())
 		return
 	}

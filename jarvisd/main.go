@@ -91,7 +91,8 @@ func main() {
 		}
 		s := store.Get()
 		p := s.ActiveProfile()
-		proxy := &Proxy{}
+		proxy := probeProxy(store)
+		defer proxy.Close()
 		if err := proxy.Apply(s.Vless); err != nil {
 			log.Fatal(err)
 		}
@@ -157,7 +158,8 @@ func main() {
 			log.Fatal(err)
 		}
 		st := store.Get()
-		proxy := &Proxy{}
+		proxy := probeProxy(store)
+		defer proxy.Close()
 		if err := proxy.Apply(st.Vless); err != nil {
 			log.Fatal(err)
 		}
@@ -177,7 +179,8 @@ func main() {
 			log.Fatal(err)
 		}
 		st := store.Get()
-		proxy := &Proxy{}
+		proxy := probeProxy(store)
+		defer proxy.Close()
 		if err := proxy.Apply(st.Vless); err != nil {
 			log.Fatal(err)
 		}
@@ -210,7 +213,8 @@ func main() {
 			log.Fatal(err)
 		}
 		st := store.Get()
-		proxy := &Proxy{}
+		proxy := probeProxy(store)
+		defer proxy.Close()
 		if err := proxy.Apply(st.Vless); err != nil {
 			log.Fatal(err)
 		}
@@ -448,7 +452,8 @@ func main() {
 			log.Fatal(err)
 		}
 		st := store.Get()
-		proxy := &Proxy{}
+		proxy := probeProxy(store)
+		defer proxy.Close()
 		if err := proxy.Apply(st.Vless); err != nil {
 			log.Fatal(err)
 		}
@@ -558,7 +563,7 @@ func main() {
 	proxy.use = func(svc string) bool { s := store.Get(); return s.UseVPN(svc) }
 	logTZ.set(store.Get().Timezone)
 	if err := proxy.Apply(store.Get().Vless); err != nil {
-		log.Printf("VLESS: %v (работаю напрямую)", err)
+		log.Printf("VPN: %v", err)
 	}
 	journal := &Journal{}
 	chatgptChat = LoadChatThread(filepath.Join(*dataDir, "chatgpt-chat.json"))
@@ -787,8 +792,10 @@ func main() {
 		_ = json.Unmarshal(b, &m)
 		return m
 	}
+	proxy.provider = pluginHost.VPNProvider
 	go func() {
 		pluginHost.Load()
+		go proxy.Run(context.Background())
 		pluginHost.EnsureLoop()
 	}()
 	updater.prepare = func(ctx context.Context, tag string) error {

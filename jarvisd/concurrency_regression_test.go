@@ -16,7 +16,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dop251/goja"
-	"github.com/xtls/xray-core/core"
 )
 
 func TestPlayerDrainHelper(t *testing.T) {
@@ -125,7 +124,8 @@ func TestServiceHTTPPoolReuseAndRouteChange(t *testing.T) {
 		t.Fatal("pool is recreated")
 	}
 	// A changed Xray instance must retire connections from the previous route.
-	p.inst = new(core.Instance)
+	p.link = "vless://test"
+	p.tun = &vpnTunnel{Socks: "127.0.0.1:1", User: "test", Pass: "test"}
 	second := p.servicePool("gemini")
 	if second == first {
 		t.Fatal("old route reused")
@@ -134,7 +134,8 @@ func TestServiceHTTPPoolReuseAndRouteChange(t *testing.T) {
 	if p.servicePool("gemini") == second {
 		t.Fatal("VPN pool reused for direct traffic")
 	}
-	p.inst = nil
+	p.link = ""
+	p.tun = nil
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }))
 	defer server.Close()
 	client := p.ClientFor("gemini", time.Second)

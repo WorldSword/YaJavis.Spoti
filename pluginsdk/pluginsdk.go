@@ -62,6 +62,7 @@ type Plugin struct {
 	command  func(text string) (bool, string)
 	onInit   func(Init)
 	onSet    func(map[string]any)
+	methods  map[string]func(json.RawMessage) (any, error)
 
 	wmu     sync.Mutex
 	nextID  atomic.Int64
@@ -85,6 +86,18 @@ func (p *Plugin) Tool(def ToolDef, fn func(args json.RawMessage) (string, error)
 // Command — быстрые команды без модели. text — фраза без «Джарвис», в нижнем регистре, ё → е.
 // Вернуть true — фраза ваша (answer Джарвис скажет; пустой — короткий сигнал «готово»). Отвечать быстро: до 3 с.
 func (p *Plugin) Command(fn func(text string) (handled bool, answer string)) { p.command = fn }
+
+// Handle — свой метод протокола для того, что плагин «даёт» ядру (provides в plugin.json): например, "vpn".
+// Ответ fn уходит ядру как result, ошибка — как error. Вызывать до Run.
+func (p *Plugin) Handle(method string, fn func(params json.RawMessage) (any, error)) {
+	if p.methods == nil {
+		p.methods = map[string]func(json.RawMessage) (any, error){}
+	}
+	p.methods[method] = fn
+}
+
+// Notify — уведомление ядру без ответа (например, "vpn" — туннель поменялся сам).
+func (p *Plugin) Notify(method string, params any) { p.notify(method, params) }
 
 // OnInit — настройки и сведения о колонке при запуске.
 func (p *Plugin) OnInit(fn func(Init)) { p.onInit = fn }
@@ -210,7 +223,15 @@ func (p *Plugin) serve(m msg) {
 		}
 		result = map[string]any{"handled": ok, "answer": answer}
 	default:
-		errText = "неизвестный метод " + m.Method
+		if fn := p.methods[m.Method]; fn != nil {
+			r, err := fn(m.Params)
+			if err != nil {
+				errText = err.Error()
+			}
+			result = r
+		} else {
+			errText = "неизвестный метод " + m.Method
+		}
 	}
 	if m.ID != 0 {
 		raw, _ := json.Marshal(result)

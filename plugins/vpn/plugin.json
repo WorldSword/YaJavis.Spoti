@@ -1,0 +1,15 @@
+{
+  "id": "vpn",
+  "name": "VPN (VLESS)",
+  "version": "1.0.0",
+  "description": "Туннель VLESS (REALITY, TLS, WebSocket) на ядре Xray для самого Джарвиса: ChatGPT, OpenAI, Gemini, YouTube там, где они не работают напрямую. Ссылка и галочки «Через VPN» — в «Подключениях». Алиса всегда ходит напрямую.",
+  "author": "YaJarvis",
+  "homepage": "https://github.com/newfpv/YaJavis",
+  "kind": "native",
+  "main": "vpn-{arch}",
+  "api": 1,
+  "icon": "shield",
+  "category": "system",
+  "provides": ["vpn"],
+  "min_core": "0.9.69"
+}

@@ -28,7 +28,8 @@ func probeGeminiInterruption() error {
 	if len(b) < 3200 || len(b) > 16000*2*20 || len(b)%2 != 0 {
 		return errors.New("неподходящий размер PCM")
 	}
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	if err = proxy.Apply(cfg.Vless); err != nil {
 		return err
 	}
@@ -99,7 +100,8 @@ func probeGeminiModels(path string) {
 		return
 	}
 	cfg := store.Get()
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	proxy.use = func(svc string) bool { s := store.Get(); return s.UseVPN(svc) }
 	if err := proxy.Apply(cfg.Vless); err != nil {
 		fmt.Println("VPN:", err)

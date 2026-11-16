@@ -257,7 +257,8 @@ func probeRecommendations() {
 	if err != nil {
 		panic(err)
 	}
-	p := &Proxy{}
+	p := probeProxy(store)
+	defer p.Close()
 	if err := p.Apply(store.Get().Vless); err != nil {
 		fmt.Println("VPN:", err)
 		return

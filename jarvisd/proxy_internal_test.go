@@ -13,7 +13,12 @@ func TestVlessInternal(t *testing.T) {
 	if link == "" || u == "" {
 		t.Skip("нет JARVIS_VLESS / JARVIS_VLESS_URL")
 	}
-	p := &Proxy{}
+	st, err := OpenStore("/data/opt/jarvisd/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := probeProxy(st)
+	defer p.Close()
 	if err := p.Apply(link); err != nil {
 		t.Fatal(err)
 	}

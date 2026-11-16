@@ -21,7 +21,8 @@ func configureClassic() error {
 	if msg := keyMissing(cfg, "elevenlabs"); msg != "" {
 		return errors.New(msg)
 	}
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	if err = proxy.Apply(cfg.Vless); err != nil {
 		return err
 	}
@@ -94,7 +95,8 @@ func probeClassic() error {
 	}
 	classicDefaults(&p)
 	p.WebSearch, p.Priority = false, false
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	if err = proxy.Apply(cfg.Vless); err != nil {
 		return err
 	}

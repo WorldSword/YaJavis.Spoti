@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -43,7 +44,7 @@ func main() {
 			continue
 		}
 		dir := filepath.Join("plugins", e.Name())
-		var m struct{ ID, Version, Kind string }
+		var m struct{ ID, Version, Kind, Main string }
 		b, err := os.ReadFile(filepath.Join(dir, "plugin.json"))
 		if err != nil {
 			continue
@@ -56,7 +57,42 @@ func main() {
 			fail("%s: в plugins/index.json версия %q, в plugin.json %q", m.ID, v, m.Version)
 		}
 		if m.Kind != "js" {
-			fail("%s: нативные официальные плагины собираются отдельно", m.ID)
+			if m.Kind != "native" {
+				fail("%s: неизвестный kind", m.ID)
+			}
+			for _, arch := range []string{"arm64", "armv7"} {
+				stage, err := os.MkdirTemp("", "yajavis-plugin-")
+				must(err)
+				must(os.WriteFile(filepath.Join(stage, "plugin.json"), b, 0644))
+				bin := strings.ReplaceAll(m.Main, "{arch}", arch)
+				if filepath.Base(bin) != bin {
+					fail("неправильный main: %s", bin)
+				}
+				goBin := os.Getenv("GO")
+				if goBin == "" {
+					goBin = "go"
+				}
+				target, _ := filepath.Abs(filepath.Join(stage, bin))
+				cmd := exec.Command(goBin, "build", "-trimpath", "-ldflags=-s -w -buildid=", "-o", target, ".")
+				cmd.Dir = filepath.Join(dir, "src")
+				goarch := arch
+				if arch == "armv7" {
+					goarch = "arm"
+				}
+				for _, v := range os.Environ() {
+					if !strings.HasPrefix(v, "GOOS=") && !strings.HasPrefix(v, "GOARCH=") && !strings.HasPrefix(v, "GOARM=") && !strings.HasPrefix(v, "CGO_ENABLED=") {
+						cmd.Env = append(cmd.Env, v)
+					}
+				}
+				cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH="+goarch, "GOARM=7", "CGO_ENABLED=0")
+				if output, err := cmd.CombinedOutput(); err != nil {
+					fail("%s %s: %v\n%s", m.ID, arch, err, output)
+				}
+				pack(stage, filepath.Join(out, "plugin-"+m.ID+"-"+arch+".zip"))
+				must(os.RemoveAll(stage))
+				fmt.Printf("plugin-%s-%s.zip %s\n", m.ID, arch, m.Version)
+			}
+			continue
 		}
 		dst := filepath.Join(out, "plugin-"+m.ID+".zip")
 		pack(dir, dst)
@@ -81,9 +117,16 @@ func pack(dir, dst string) {
 		rel, _ := filepath.Rel(dir, p)
 		b, err := os.ReadFile(p)
 		must(err)
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: filepath.ToSlash(rel), Method: zip.Deflate, Modified: time.Unix(0, 0).UTC()})
+		h := &zip.FileHeader{Name: filepath.ToSlash(rel), Method: zip.Deflate, Modified: time.Unix(0, 0).UTC()}
+		info, err := os.Stat(p)
 		must(err)
-		_, err = w.Write([]byte(strings.ReplaceAll(string(b), "\r\n", "\n")))
+		h.SetMode(info.Mode())
+		w, err := zw.CreateHeader(h)
+		must(err)
+		if filepath.Ext(p) == ".json" || filepath.Ext(p) == ".js" {
+			b = []byte(strings.ReplaceAll(string(b), "\r\n", "\n"))
+		}
+		_, err = w.Write(b)
 		must(err)
 	}
 	must(zw.Close())

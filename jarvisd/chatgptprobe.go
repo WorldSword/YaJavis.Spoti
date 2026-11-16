@@ -62,7 +62,8 @@ func runChatGPTMicProbe(args []string, dataDir string) {
 		return
 	}
 	st := store.Get()
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	proxy.use = func(svc string) bool { s := store.Get(); return s.UseVPN(svc) }
 	if err := proxy.Apply(st.Vless); err != nil {
 		fmt.Println("VPN:", err)
@@ -150,7 +151,8 @@ func runChatGPTWhoProbe(args []string, dataDir string) {
 		return
 	}
 	st := store.Get()
-	proxy := &Proxy{}
+	proxy := probeProxy(store)
+	defer proxy.Close()
 	proxy.use = func(svc string) bool { s := store.Get(); return s.UseVPN(svc) }
 	if err := proxy.Apply(st.Vless); err != nil {
 		fmt.Println("VPN:", err)

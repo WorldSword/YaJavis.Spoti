@@ -278,6 +278,22 @@ func TestOfficialPlugins(t *testing.T) {
 		}
 		files := map[string]string{}
 		dir := filepath.Join("../plugins", e.Name())
+		manifest, err := readManifest(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if manifest.Kind == "native" {
+			found := false
+			for _, it := range idx.Plugins {
+				if it.ID == manifest.ID && it.Version == manifest.Version {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("native plugin %s missing from catalog", manifest.ID)
+			}
+			continue // binaries are built and tested by the native package / release pack
+		}
 		fs, _ := os.ReadDir(dir)
 		for _, f := range fs {
 			b, _ := os.ReadFile(filepath.Join(dir, f.Name()))

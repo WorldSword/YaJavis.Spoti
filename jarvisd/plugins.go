@@ -278,6 +278,8 @@ func validManifest(m PluginManifest) error {
 		return errors.New(`kind плагина — "js" или "native"`)
 	case !validCategory(m.Category):
 		return fmt.Errorf("category плагина — одна из: %s", categoryIDs())
+	case slices.Contains(m.Provides, "vpn") && m.Kind != "native":
+		return errors.New("провайдер VPN должен быть нативным плагином")
 	case m.Main == "" || strings.Contains(m.Main, "..") || path.IsAbs(m.Main) || strings.ContainsAny(m.Main, `\`):
 		return errors.New("main плагина — имя файла внутри архива")
 	case m.API > pluginAPI:

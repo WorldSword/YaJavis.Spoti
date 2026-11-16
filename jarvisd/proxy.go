@@ -1,217 +1,81 @@
 package main
 
-// VLESS прямо внутри jarvisd: ссылка vless://… → конфиг ядра Xray → net.Conn для HTTP и WebSocket.
-// Никакого TUN и отдельного sing-box: трафик через туннель идёт только у самого Джарвиса,
-// штатная Алиса и музыка Яндекса работают напрямую, как раньше.
+// Выход в интернет для облачных сервисов: напрямую или через VPN.
+//
+// Сам VPN с 0.9.69 — плагин (официальный «vpn» на ядре Xray или любой другой с "provides": ["vpn"]):
+// ядро отдаёт ему ссылку из настроек, плагин поднимает туннель и SOCKS5 на 127.0.0.1 с паролем,
+// а ядро пускает через этот SOCKS те подключения, у которых в панели стоит «Через VPN» (netroute.go).
+// Алиса и музыка Яндекса ходят напрямую, как раньше. Протокол — docs/PLUGINS.md, раздел «VPN».
 
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
-	"encoding/hex"
+	"encoding/json"
 	"errors"
-	"fmt"
+
+	"golang.org/x/net/proxy"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/xtls/xray-core/app/dispatcher"
-	xlog "github.com/xtls/xray-core/app/log"
-	"github.com/xtls/xray-core/app/proxyman"
-	clog "github.com/xtls/xray-core/common/log"
-	xnet "github.com/xtls/xray-core/common/net"
-	"github.com/xtls/xray-core/common/protocol"
-	"github.com/xtls/xray-core/common/serial"
-	"github.com/xtls/xray-core/common/uuid"
-	"github.com/xtls/xray-core/core"
-	"github.com/xtls/xray-core/proxy/vless"
-	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
-	"github.com/xtls/xray-core/transport/internet"
-	"github.com/xtls/xray-core/transport/internet/reality"
-	"github.com/xtls/xray-core/transport/internet/tcp"
-	xtls "github.com/xtls/xray-core/transport/internet/tls"
-	"github.com/xtls/xray-core/transport/internet/websocket"
-
-	// регистрация нужных частей ядра (только клиент VLESS — меньше бинарник)
-	_ "github.com/xtls/xray-core/app/dispatcher"
-	_ "github.com/xtls/xray-core/app/proxyman/outbound"
-	_ "github.com/xtls/xray-core/proxy/vless/outbound"
-	_ "github.com/xtls/xray-core/transport/internet/reality"
-	_ "github.com/xtls/xray-core/transport/internet/tcp"
-	_ "github.com/xtls/xray-core/transport/internet/tls"
-	_ "github.com/xtls/xray-core/transport/internet/websocket"
 )
 
-// VlessLink — разобранная ссылка; поля показываются в веб-настройках, чтобы было видно, что поняли.
-type VlessLink struct {
+// VPNInfo — что плагин понял из ссылки; показывается в панели, чтобы было видно, что поняли.
+type VPNInfo struct {
 	Name     string `json:"name"`
-	UUID     string `json:"-"`
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
-	Network  string `json:"network"`  // tcp, ws, grpc, xhttp
-	Security string `json:"security"` // none, tls, reality
+	Network  string `json:"network"`
+	Security string `json:"security"`
 	SNI      string `json:"sni"`
 	Flow     string `json:"flow"`
 	Finger   string `json:"fp"`
-	PubKey   string `json:"-"`
-	ShortID  string `json:"-"`
-	SpiderX  string `json:"-"`
 	Path     string `json:"path"`
-	HostHdr  string `json:"-"`
-	Service  string `json:"-"`
-	ALPN     string `json:"-"`
-	Mode     string `json:"-"`
-	Insecure bool   `json:"insecure"` // allowInsecure=1: сертификат сервера не проверяется
+	Insecure bool   `json:"insecure"`
 }
 
-func ParseVless(link string) (*VlessLink, error) {
-	link = strings.TrimSpace(link)
-	if !strings.HasPrefix(strings.ToLower(link), "vless://") {
-		return nil, errors.New("ссылка должна начинаться с vless://")
-	}
-	u, err := url.Parse(link)
-	if err != nil {
-		return nil, fmt.Errorf("не разобрать ссылку: %v", err)
-	}
-	if u.User == nil || u.User.Username() == "" {
-		return nil, errors.New("в ссылке нет UUID (часть до @)")
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port <= 0 || port > 65535 {
-		return nil, errors.New("в ссылке нет порта сервера")
-	}
-	q := u.Query()
-	get := func(k, def string) string {
-		if v := q.Get(k); v != "" {
-			return v
-		}
-		return def
-	}
-	v := &VlessLink{
-		Name: u.Fragment, UUID: u.User.Username(), Host: u.Hostname(), Port: port,
-		Network: strings.ToLower(get("type", "tcp")), Security: strings.ToLower(get("security", "none")),
-		SNI: get("sni", get("peer", "")), Flow: q.Get("flow"), Finger: get("fp", "chrome"),
-		PubKey: get("pbk", ""), ShortID: q.Get("sid"), SpiderX: q.Get("spx"),
-		Path: q.Get("path"), HostHdr: q.Get("host"), Service: q.Get("serviceName"), ALPN: q.Get("alpn"), Mode: q.Get("mode"),
-		Insecure: q.Get("allowInsecure") == "1" || q.Get("insecure") == "1" || q.Get("allowInsecure") == "true",
-	}
-	if v.Network == "raw" {
-		v.Network = "tcp"
-	}
-	switch v.Network {
-	case "tcp", "ws":
-	case "grpc":
-		// gRPC убран: он один добавлял 2,4 МБ к программе, а на флешке колонки всего 87 МБ
-		return nil, errors.New("транспорт gRPC не поддерживается — возьмите ссылку с type=tcp (REALITY) или ws")
-	default:
-		return nil, fmt.Errorf("транспорт %q пока не поддерживается (есть tcp, ws)", v.Network)
-	}
-	if e := q.Get("encryption"); e != "" && e != "none" {
-		return nil, errors.New("постквантовое шифрование VLESS (encryption) пока не поддерживается")
-	}
-	if _, err := uuid.ParseString(v.UUID); err != nil {
-		return nil, errors.New("UUID в ссылке неправильный")
-	}
-	if v.Flow != "" && v.Flow != vless.XRV && v.Flow != vless.XRV+"-udp443" {
-		return nil, fmt.Errorf("flow %q не поддерживается", v.Flow)
-	}
-	if v.Security == "reality" {
-		if k, err := base64.RawURLEncoding.DecodeString(v.PubKey); err != nil || len(k) != 32 {
-			return nil, errors.New("pbk (ключ REALITY) в ссылке неправильный")
-		}
-		if len(v.ShortID) > 16 || len(v.ShortID)%2 != 0 {
-			return nil, errors.New("sid (short id REALITY) в ссылке неправильный")
-		}
-		if _, err := hex.DecodeString(v.ShortID); err != nil {
-			return nil, errors.New("sid (short id REALITY) в ссылке неправильный")
-		}
-		if v.Network == "ws" {
-			return nil, errors.New("REALITY не работает с ws — проверьте ссылку")
-		}
-	}
-	switch v.Security {
-	case "none", "tls", "reality":
-	default:
-		return nil, fmt.Errorf("шифрование %q не поддерживается (есть tls, reality)", v.Security)
-	}
-	if v.Security == "reality" && v.PubKey == "" {
-		return nil, errors.New("для REALITY в ссылке нужен pbk (публичный ключ)")
-	}
-	return v, nil
+// vpnTunnel — туннель, который держит плагин: SOCKS5 на 127.0.0.1 с паролем.
+type vpnTunnel struct {
+	Socks string   `json:"socks"`
+	User  string   `json:"user"`
+	Pass  string   `json:"pass"`
+	Info  *VPNInfo `json:"info"`
 }
 
-func (v *VlessLink) coreConfig() (*core.Config, error) {
-	sni := v.SNI
-	if sni == "" && net.ParseIP(v.Host) == nil {
-		sni = v.Host
+// key — один и тот же путь в сеть (пулы соединений по нему и меняются).
+func (t *vpnTunnel) key() string {
+	if t == nil {
+		return ""
 	}
-	fp := strings.ToLower(v.Finger)
-	if fp == "" {
-		fp = "chrome"
-	}
-	if xtls.GetFingerprint(fp) == nil {
-		fp = "chrome"
-	}
-	stream := &internet.StreamConfig{ProtocolName: map[string]string{"tcp": "tcp", "ws": "websocket"}[v.Network]}
-	switch v.Network {
-	case "tcp":
-		stream.TransportSettings = append(stream.TransportSettings, &internet.TransportConfig{ProtocolName: "tcp", Settings: serial.ToTypedMessage(&tcp.Config{})})
-	case "ws":
-		path := v.Path
-		if path == "" {
-			path = "/"
-		}
-		stream.TransportSettings = append(stream.TransportSettings, &internet.TransportConfig{ProtocolName: "websocket",
-			Settings: serial.ToTypedMessage(&websocket.Config{Path: path, Host: v.HostHdr})})
-	}
-	switch v.Security {
-	case "tls":
-		t := &xtls.Config{ServerName: sni, Fingerprint: fp, AllowInsecure: v.Insecure}
-		if v.ALPN != "" {
-			t.NextProtocol = strings.Split(v.ALPN, ",")
-		}
-		tm := serial.ToTypedMessage(t)
-		stream.SecuritySettings, stream.SecurityType = []*serial.TypedMessage{tm}, tm.Type
-	case "reality":
-		pk, _ := base64.RawURLEncoding.DecodeString(v.PubKey)
-		sid := make([]byte, 8)
-		_, _ = hex.Decode(sid, []byte(v.ShortID))
-		spx := v.SpiderX
-		if spx == "" || spx[0] != '/' {
-			spx = "/"
-		}
-		r := &reality.Config{ServerName: sni, Fingerprint: fp, PublicKey: pk, ShortId: sid, SpiderX: spx, SpiderY: make([]int64, 10)}
-		tm := serial.ToTypedMessage(r)
-		stream.SecuritySettings, stream.SecurityType = []*serial.TypedMessage{tm}, tm.Type
-	}
-	id, _ := uuid.ParseString(v.UUID)
-	account := &vless.Account{Id: id.String(), Flow: v.Flow, Encryption: "none"}
-	out := &core.OutboundHandlerConfig{
-		Tag:            "proxy",
-		SenderSettings: serial.ToTypedMessage(&proxyman.SenderConfig{StreamSettings: stream}),
-		ProxySettings: serial.ToTypedMessage(&vlessout.Config{Vnext: &protocol.ServerEndpoint{
-			Address: xnet.NewIPOrDomain(xnet.ParseAddress(v.Host)), Port: uint32(v.Port),
-			User: &protocol.User{Account: serial.ToTypedMessage(account)}}}),
-	}
-	return &core.Config{
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(&xlog.Config{ErrorLogType: xlog.LogType_Console, ErrorLogLevel: clog.Severity_Warning, AccessLogType: xlog.LogType_None}),
-			serial.ToTypedMessage(&dispatcher.Config{}), serial.ToTypedMessage(&proxyman.OutboundConfig{})},
-		Outbound: []*core.OutboundHandlerConfig{out},
-	}, nil
+	return t.Socks + "|" + t.User + "|" + t.Pass
 }
+
+// vpnProvider — плагин, который умеет VPN: link "" — выключить туннель.
+type vpnProvider interface {
+	VPN(ctx context.Context, link string) (*vpnTunnel, error)
+}
+
+const vpnMissing = "VPN теперь отдельный плагин: поставьте «VPN» на странице «Плагины»"
+
+// vpnStartWait bounds plugin RPCs. A missing tunnel never selects a direct route.
+var vpnStartWait = 5 * time.Second
 
 // Proxy — общий выход в интернет для облачных сервисов. Без ссылки — напрямую.
 type Proxy struct {
 	mu   sync.RWMutex
-	inst *core.Instance
-	link *VlessLink
+	link string     // ссылка из настроек
+	tun  *vpnTunnel // nil with a configured link means unavailable, never direct
 	err  string
+
+	cleanup func()
+	applyMu sync.Mutex
+	// provider — плагин VPN сейчас; nil и причина, если его нет; starting — вот-вот запустится, стоит подождать
+	provider func() (prov vpnProvider, why string, starting bool)
 
 	warmMu sync.Mutex
 	warm   map[string]*warmConn // готовые TLS-соединения по адресу «хост:443»
@@ -244,31 +108,9 @@ func (p *Proxy) dialTLS(ctx context.Context, addr string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Соединение через туннель живёт, пока жив контекст, с которым его открыли: отмена таймера закрыла бы и его.
-	// Поэтому открываем с неотменяемым контекстом, а время ожидания ограничиваем сами.
-	type dialed struct {
-		c   net.Conn
-		err error
-	}
-	ch := make(chan dialed, 1)
-	go func() {
-		c, err := p.DialContext(context.WithoutCancel(ctx), "tcp", addr)
-		ch <- dialed{c, err}
-	}()
-	var raw net.Conn
-	select {
-	case d := <-ch:
-		if d.err != nil {
-			return nil, d.err
-		}
-		raw = d.c
-	case <-ctx.Done():
-		go func() {
-			if d := <-ch; d.c != nil {
-				d.c.Close()
-			}
-		}()
-		return nil, ctx.Err()
+	raw, err := p.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
 	}
 	c := tls.Client(raw, &tls.Config{ServerName: host, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12})
 	if err := c.HandshakeContext(ctx); err != nil {
@@ -358,130 +200,255 @@ func (p *Proxy) LiveClient() *http.Client {
 	}}
 }
 
-// vlessNoFlow — ссылки, у которых сервер не принимает flow из ссылки (частая ошибка панелей x-ui:
-// в подписке flow=xtls-rprx-vision, а у самого клиента Flow пустой — сервер молча рвёт связь, EOF).
-var vlessNoFlow sync.Map
-
+// Apply records the selected route even when the plugin is unavailable: selected
+// VPN traffic must never fall back to a direct connection after a plugin failure.
 func (p *Proxy) Apply(link string) error {
-	_, noFlow := vlessNoFlow.Load(strings.TrimSpace(link))
-	err := p.apply(link, noFlow)
-	if err == nil && !noFlow {
-		if v, _ := p.Status(); v != nil && v.Flow != "" {
-			go p.checkFlow(strings.TrimSpace(link), v)
+	link = strings.TrimSpace(link)
+	if link != "" && !strings.HasPrefix(strings.ToLower(link), "vless://") {
+		return errors.New("ссылка должна начинаться с vless://")
+	}
+	p.applyMu.Lock()
+	defer p.applyMu.Unlock()
+	p.mu.Lock()
+	p.link = link
+	p.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), vpnStartWait)
+	defer cancel()
+	return p.refreshLocked(ctx)
+}
+
+func (p *Proxy) refreshLocked(ctx context.Context) error {
+	p.mu.RLock()
+	link := p.link
+	p.mu.RUnlock()
+	var tun *vpnTunnel
+	var err error
+	if p.provider != nil {
+		prov, why, _ := p.provider()
+		if prov != nil {
+			tun, err = prov.VPN(ctx, link)
+		} else if link != "" {
+			err = errors.New(why)
 		}
+	} else if link != "" {
+		err = errors.New(vpnMissing)
+	}
+	if link != "" && err == nil {
+		err = validVPNTunnel(tun)
+	}
+	if link == "" {
+		tun = nil
+		err = nil
+	}
+	if err != nil {
+		tun = nil
+	}
+	p.mu.Lock()
+	oldKey := p.tun.key()
+	p.tun = tun
+	p.err = ""
+	if err != nil {
+		p.err = err.Error()
+	}
+	p.mu.Unlock()
+	if oldKey != tun.key() {
+		p.warmMu.Lock()
+		for addr, w := range p.warm {
+			w.c.Close()
+			delete(p.warm, addr)
+		}
+		p.warmMu.Unlock()
 	}
 	return err
 }
 
-// checkFlow — если через туннель ничего не открывается, а без flow открывается, работаем без flow.
-func (p *Proxy) checkFlow(link string, v *VlessLink) {
-	probe := func(c *http.Client) error {
-		r, err := c.Get("https://www.google.com/generate_204")
-		if err == nil {
-			r.Body.Close()
-		}
-		return err
+func validVPNTunnel(t *vpnTunnel) error {
+	if t == nil {
+		return errors.New("плагин VPN не вернул туннель")
 	}
-	if err := probe(p.Client(12 * time.Second)); err == nil || !strings.Contains(err.Error(), "EOF") {
-		return
+	host, port, err := net.SplitHostPort(t.Socks)
+	ip := net.ParseIP(host)
+	n, _ := strconv.Atoi(port)
+	if err != nil || ip == nil || !ip.IsLoopback() || n < 1 || n > 65535 || len(t.User) == 0 || len(t.User) > 255 || len(t.Pass) == 0 || len(t.Pass) > 255 {
+		return errors.New("плагин VPN вернул неправильный локальный SOCKS")
 	}
-	alt := &Proxy{}
-	if alt.apply(link, true) != nil {
-		return
-	}
-	defer alt.Apply("")
-	if probe(alt.Client(12*time.Second)) != nil {
-		return // без flow тоже не работает — дело не во flow
-	}
-	if cur, _ := p.Status(); cur != v { // ссылку за это время поменяли
-		return
-	}
-	vlessNoFlow.Store(link, true)
-	if p.apply(link, true) == nil {
-		log.Printf("VPN: сервер не принимает flow=%s из ссылки (у клиента в x-ui Flow пустой) — работаю без flow", v.Flow)
-	}
-}
-
-func (p *Proxy) apply(link string, noFlow bool) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.inst != nil {
-		p.inst.Close()
-		p.inst, p.link = nil, nil
-	}
-	p.warmMu.Lock() // готовые соединения шли через старый туннель
-	for a, w := range p.warm {
-		w.c.Close()
-		delete(p.warm, a)
-	}
-	p.warmMu.Unlock()
-	p.err = ""
-	if strings.TrimSpace(link) == "" {
-		return nil
-	}
-	v, err := ParseVless(link)
-	if err != nil {
-		p.err = err.Error()
-		return err
-	}
-	if noFlow {
-		v.Flow = ""
-	}
-	cfg, err := v.coreConfig()
-	if err != nil {
-		p.err = "Xray не принял настройки: " + err.Error()
-		return errors.New(p.err)
-	}
-	inst, err := core.New(cfg)
-	if err == nil {
-		err = inst.Start()
-	}
-	if err != nil {
-		p.err = "Xray не запустился: " + err.Error()
-		return errors.New(p.err)
-	}
-	p.inst, p.link = inst, v
 	return nil
 }
 
-func (p *Proxy) Status() (link *VlessLink, errText string) {
+func (p *Proxy) Run(ctx context.Context) {
+	for {
+		p.applyMu.Lock()
+		c, cancel := context.WithTimeout(ctx, vpnStartWait)
+		_ = p.refreshLocked(c)
+		cancel()
+		p.applyMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+func (p *Proxy) Status() (*VPNInfo, string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.link, p.err
+	if p.tun != nil && p.tun.Info != nil {
+		v := *p.tun.Info
+		return &v, p.err
+	}
+	return nil, p.err
 }
 
-// DialContext — для http.Transport: через VLESS, если он настроен, иначе напрямую.
-func (p *Proxy) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+func (p *Proxy) route(svc string) (string, *vpnTunnel, string) {
+	use := p.use == nil || svc == "" || p.use(svc)
 	p.mu.RLock()
-	inst := p.inst
-	p.mu.RUnlock()
-	return dialInstance(ctx, inst, network, addr)
+	defer p.mu.RUnlock()
+	if !use || p.link == "" {
+		return "direct", nil, ""
+	}
+	if p.tun != nil {
+		return p.tun.key(), p.tun, ""
+	}
+	why := p.err
+	if why == "" {
+		why = "плагин VPN запускается"
+	}
+	return "blocked|" + why, nil, why
 }
 
-func dialInstance(ctx context.Context, inst *core.Instance, network, addr string) (net.Conn, error) {
-	if inst == nil {
-		var d net.Dialer
-		return d.DialContext(ctx, network, addr)
-	}
-	host, portStr, err := net.SplitHostPort(addr)
+func dialTunnel(ctx context.Context, t *vpnTunnel, network, addr string) (net.Conn, error) {
+	d, err := proxy.SOCKS5("tcp", t.Socks, &proxy.Auth{User: t.User, Password: t.Pass}, directDialer)
 	if err != nil {
 		return nil, err
 	}
-	port, err := xnet.PortFromString(portStr)
-	if err != nil {
-		return nil, err
+	cd, ok := d.(proxy.ContextDialer)
+	if !ok {
+		return nil, errors.New("SOCKS не поддерживает контекст")
 	}
-	return core.Dial(ctx, inst, xnet.TCPDestination(xnet.ParseAddress(host), port))
+	return cd.DialContext(ctx, network, addr)
 }
 
-// Client — HTTP-клиент для облака (OpenAI, ElevenLabs). Яндекс ходит напрямую (DirectClient).
-func (p *Proxy) Client(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &http.Transport{
-		DialContext: p.DialContext, ForceAttemptHTTP2: true, MaxIdleConns: 8,
-		IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second,
-	}}
+func (p *Proxy) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	_, t, why := p.route("")
+	if why != "" {
+		return nil, errors.New(why)
+	}
+	if t != nil {
+		return dialTunnel(ctx, t, network, addr)
+	}
+	return directDialer.DialContext(ctx, network, addr)
 }
+
+func (p *Proxy) Client(timeout time.Duration) *http.Client { return p.ClientFor("", timeout) }
 
 var DirectClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
 	DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext, MaxIdleConns: 4, IdleConnTimeout: 120 * time.Second,
 }}
+
+func (n *nativePlugin) VPN(ctx context.Context, link string) (*vpnTunnel, error) {
+	raw, err := n.request(ctx, "vpn", map[string]any{"link": link})
+	if err != nil {
+		return nil, err
+	}
+	var t vpnTunnel
+	if err = json.Unmarshal(raw, &t); err != nil {
+		return nil, errors.New("плагин VPN вернул не JSON")
+	}
+	return &t, nil
+}
+
+// VPNProvider selects one enabled native provider; the official id wins ties.
+func (h *PluginHost) VPNProvider() (vpnProvider, string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var chosen *Plugin
+	disabled := false
+	for _, p := range h.plugins {
+		found := false
+		for _, cap := range p.Manifest.Provides {
+			if cap == "vpn" {
+				found = true
+			}
+		}
+		st := h.state[p.Manifest.ID]
+		if found && st != nil && !st.Enabled && !st.Removed {
+			disabled = true
+		}
+		if !found || st == nil || !st.Enabled || st.Removed {
+			continue
+		}
+		if chosen == nil || p.Manifest.ID == "vpn" || (chosen.Manifest.ID != "vpn" && p.Manifest.ID < chosen.Manifest.ID) {
+			chosen = p
+		}
+	}
+	if chosen == nil {
+		if disabled {
+			return nil, "Плагин VPN выключен — включите его на странице «Плагины»", false
+		}
+		return nil, vpnMissing, false
+	}
+	if n, ok := chosen.rt.(*nativePlugin); ok {
+		return n, "", false
+	}
+	why := chosen.err
+	if why == "" {
+		why = "плагин VPN запускается"
+	}
+	return nil, why, true
+}
+
+// CLI probes load only the network provider, without starting unrelated plugins.
+func probeProxy(store *Store) *Proxy {
+	p := &Proxy{}
+	h := NewPluginHost(filepath.Dir(store.path), PluginHooks{}, func() *http.Client { return DirectClient })
+	var state map[string]*pluginState
+	if b, err := os.ReadFile(h.statePath()); err == nil {
+		_ = json.Unmarshal(b, &state)
+	}
+	for id, st := range state {
+		if st != nil {
+			h.state[id] = st
+		}
+	}
+	dirs, _ := os.ReadDir(h.dir())
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		dir := filepath.Join(h.dir(), d.Name())
+		m, err := readManifest(dir)
+		if err != nil || m.ID != d.Name() {
+			continue
+		}
+		found := false
+		for _, cap := range m.Provides {
+			if cap == "vpn" {
+				found = true
+			}
+		}
+		if !found {
+			continue
+		}
+		st := h.stateLocked(m.ID)
+		if !st.Enabled || st.Removed {
+			continue
+		}
+		plugin := &Plugin{Manifest: m, Dir: dir}
+		h.plugins[m.ID] = plugin
+		h.start(plugin)
+	}
+	p.provider = h.VPNProvider
+	p.cleanup = func() {
+		for _, plugin := range h.plugins {
+			h.stop(plugin)
+		}
+	}
+	return p
+}
+
+func (p *Proxy) Close() {
+	if p.cleanup != nil {
+		p.cleanup()
+	}
+}

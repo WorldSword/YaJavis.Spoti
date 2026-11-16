@@ -24,10 +24,11 @@ jobs:
           (cd jarvisd && go test ./...)
           (cd hardware && go test ./...)
           (cd installer/soloist && go test ./...)
+          (cd plugins/vpn/src && go test -race ./...)
           for f in jarvisd/ui/js/*.js; do cp "$f" /tmp/check.mjs && node --check /tmp/check.mjs || exit 1; done
           node --check installer/ui/setup.js
       - name: Check concurrency regressions
-        run: cd jarvisd && go test -race -run 'Test(PlayerConcurrent|SettingsSnapshot|STT|ServiceHTTPPool|TrainingExport|YouTubeWarm|MiotTypes|AliceMisses|JSPlugin|NativePlugin|PluginsEnsure|BrokenPlugin|OfficialPlugins|Preview|Jitter)' ./...
+        run: cd jarvisd && go test -race -run 'Test(PlayerConcurrent|SettingsSnapshot|STT|ServiceHTTPPool|TrainingExport|YouTubeWarm|MiotTypes|AliceMisses|JSPlugin|NativePlugin|PluginsEnsure|BrokenPlugin|OfficialPlugins|PluginUpload|Preview|Jitter|VPN)' ./...
       - name: Build clean release
         env:
           VERSION: ${{ github.ref_name }}
