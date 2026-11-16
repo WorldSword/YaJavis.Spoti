@@ -37,6 +37,7 @@ type Engine struct {
 	cmds     *CmdSpotter // «стоп», «громче», «тише» штатным распознавателем Станции
 	music    *Music      // музыка с YouTube
 	alice    *AliceMusic // что играет у Алисы (Яндекс Музыка)
+	spotify  *Spotify    // Soloist (Spotify Connect), если стоит на колонке
 	train    *Trainer    // записи для дообучения слова
 	bg       *BgRecorder // длинная запись фона на сервер
 

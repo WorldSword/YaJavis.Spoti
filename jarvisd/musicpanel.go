@@ -100,7 +100,13 @@ func (w *Web) getMusic(rw http.ResponseWriter, r *http.Request) {
 // musicNow — что играет на колонке: YouTube Джарвиса или музыка Алисы.
 func (w *Web) musicNow() MusicState {
 	m, a := w.engine.music, w.engine.alice
-	if m != nil && (m.Playing() || (m.Active() && !a.Playing())) {
+	if m != nil && m.Playing() {
+		return m.Snapshot()
+	}
+	if w.engine.spotify.Active() {
+		return w.engine.spotify.Snapshot()
+	}
+	if m != nil && m.Active() && !a.Playing() {
 		return m.Snapshot()
 	}
 	if a.Active() {
@@ -116,6 +122,9 @@ func (w *Web) musicNow() MusicState {
 	return m.Snapshot()
 }
 
+// spotifyPanelActions — кнопки плеера панели → действия Spotify.Control; «стоп» у Soloist — пауза (stop.sh гасит сам сервис).
+var spotifyPanelActions = map[string]string{"pause": "pause", "resume": "resume", "next": "next", "prev": "prev", "stop": "pause"}
+
 func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action string  `json:"action"` // play | id | pause | resume | next | stop | seek | queue | unqueue | radio
@@ -129,6 +138,19 @@ func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := w.engine.music
+	if sp := w.engine.spotify; sp.Active() && !m.Playing() {
+		if act, ok := spotifyPanelActions[req.Action]; ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			if err := sp.Control(ctx, act); err != nil {
+				bad(rw, err.Error())
+				return
+			}
+			_, _ = sp.Now(ctx) // сразу обновить, не ждать опроса
+			writeJSON(rw, 200, w.musicNow())
+			return
+		}
+	}
 	if a := w.engine.alice; !m.Playing() && a.Active() && (a.Playing() || !m.Active()) {
 		switch req.Action {
 		case "pause", "resume", "next", "prev", "stop", "seek":

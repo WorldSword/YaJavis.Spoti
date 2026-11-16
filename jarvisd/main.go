@@ -638,6 +638,8 @@ func main() {
 	engine.music.OnPlay = engine.youtubeStarted
 	engine.music.mu.Unlock()
 	go engine.alice.Run(context.Background())
+	engine.spotify = NewSpotify()
+	go engine.spotify.Run(context.Background())
 	go engine.Run(context.Background())
 	// пока в комнате кто-то есть, держим наготове соединение с OpenAI: разговор открывается быстрее
 	proxy.KeepWarm("api.openai.com:443", func() bool {

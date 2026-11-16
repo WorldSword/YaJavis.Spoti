@@ -103,6 +103,8 @@ func (w *Web) Serve(addr string) error {
 	mux.HandleFunc("POST /api/chatgpt/newchat", w.auth(w.chatgptNewChat))
 	mux.HandleFunc("PUT /api/vless", w.auth(w.putVless))
 	mux.HandleFunc("PUT /api/youtube", w.auth(w.putYouTube))
+	mux.HandleFunc("PUT /api/spotify", w.auth(w.putSpotify))
+	mux.HandleFunc("POST /api/spotify/restart", w.auth(w.spotifyRestart))
 	mux.HandleFunc("GET /api/elevenlabs/voices", w.auth(w.elevenVoices))
 	mux.HandleFunc("GET /api/home-assistant", w.auth(w.getHomeAssistant))
 	mux.HandleFunc("POST /api/home-assistant/rooms/discover", w.auth(w.discoverHARooms))
@@ -398,7 +400,7 @@ func (w *Web) state(rw http.ResponseWriter, r *http.Request) {
 		"gemini_models": GeminiModels, "gemini_model_info": GeminiModelInfo, "gemini_voice_groups": GeminiVoiceGroups, "chatgpt_voice_groups": ChatGPTVoiceGroups, "grok_voice_groups": GrokVoiceGroups,
 		"chatgpt": map[string]any{"signed_in": s.ChatGPT.SignedIn(), "plan": s.ChatGPT.Plan, "email": s.ChatGPT.Email,
 			"login": w.chatLogin.State(), "chat": chatgptChat.State(), "limited_until": chatgptLimitedUntil.Load() / 1e9},
-		"vless": vless, "youtube": w.youtubeState(), "home_assistant": w.haState(), "xiaomi": w.xiaomiState(), "smartlife": w.smartLifeState(), "rooms": w.knownRooms(), "update_available": w.updater != nil && w.updater.Available(),
+		"vless": vless, "youtube": w.youtubeState(), "spotify": w.spotifyState(), "home_assistant": w.haState(), "xiaomi": w.xiaomiState(), "smartlife": w.smartLifeState(), "rooms": w.knownRooms(), "update_available": w.updater != nil && w.updater.Available(),
 		"speaker": map[string]any{"model": stationModel().Name, "model_id": stationModel().ID, "mic": w.engine.mic.Online(), "leds": w.engine.leds.Available(), "wake_model": wakeModel,
 			"talking": w.engine.Talking(), "uptime_s": int(time.Since(w.started).Seconds()), "volume": speakerVolume()},
 		"settings": map[string]any{"wake_enabled": s.WakeEnabled, "wake_sensitivity": s.WakeSensitivity, "mic_boost_db": s.MicBoostDB, "mic_gain_db": s.MicGainDB, "wake_check": s.WakeCheck,

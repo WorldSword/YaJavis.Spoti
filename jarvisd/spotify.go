@@ -239,19 +239,38 @@ func (s *Spotify) active() bool {
 	return s.ok && s.last.URI != "" && s.clock().Sub(s.lastAt) <= 3*time.Second
 }
 
+// Running — Soloist недавно отвечал (даже если сейчас ничего не играет).
+func (s *Spotify) Running() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ok && s.clock().Sub(s.lastAt) <= 3*time.Second
+}
+
 func (s *Spotify) Active() bool {
+	if s == nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.active()
 }
 
 func (s *Spotify) Playing() bool {
+	if s == nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.active() && s.last.Playing
 }
 
 func (s *Spotify) Paused() bool {
+	if s == nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.active() && !s.last.Playing
@@ -259,6 +278,9 @@ func (s *Spotify) Paused() bool {
 
 // Snapshot — для страницы «Музыка».
 func (s *Spotify) Snapshot() MusicState {
+	if s == nil {
+		return MusicState{Source: "spotify"}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.active() {
