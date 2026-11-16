@@ -86,6 +86,7 @@ type Settings struct {
 	LiveVoices []CustomVoice `json:"live_voices"`
 
 	WakeEnabled     bool           `json:"wake_enabled"`
+	WakeChimeOff    bool           `json:"wake_chime_off"`   // не играть «тилиньк» при активации (по умолчанию играет, как у Алисы)
 	WakeCheck       bool           `json:"wake_check"`       // перед ответом проверять имя расшифровкой (медленнее; без неё — сразу, как Алиса)
 	WakeSensitivity int            `json:"wake_sensitivity"` // 1..10
 	MicBoostDB      int            `json:"mic_boost_db"`     // доп. усиление микрофона для ИИ, 0..18 дБ (на Лайт 2 голос после обработки тише)

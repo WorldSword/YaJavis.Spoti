@@ -36,6 +36,7 @@ export function viewSpeaker() {
       <div class="f"><label for="s-tz">Часовой пояс</label><select id="s-tz">${TZ.map(([id, n]) => `<option value="${id}"${id === (s.timezone || "UTC") ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>`)}
   ${sec("Слово «Джарвис»", "Его распознаёт сама колонка, без интернета",
     `<label class="sw"><input type="checkbox" id="s-wake"${s.wake_enabled ? " checked" : ""}><span class="tr"></span>Откликаться на «Джарвис» ${tip("Выключите, если Джарвис нужен только по кнопке «Поговорить». Алиса работает в любом случае.")}</label>
+    <label class="sw"><input type="checkbox" id="s-chime"${s.wake_chime !== false ? " checked" : ""}><span class="tr"></span>Сигнал «тилиньк» при активации ${tip("Когда колонка услышала «Джарвис», играет тот же короткий звук, что и у Алисы, — сразу понятно, что он слушает. Пока играет Spotify, звук может не пробиться.")}</label>
     <label class="sw"><input type="checkbox" id="s-check"${s.wake_check ? " checked" : ""}><span class="tr"></span>Проверять имя перед ответом ${tip("Выключено — как у Алисы: услышал слово, сразу загорается кольцо и Джарвис слушает. Включено — сначала облако проверяет, что прозвучало именно «Джарвис»: ложных разговоров меньше, но отклик на полсекунды-секунду позже.")}</label>
     <div class="f"><label>Чувствительность ${tip("Выше — слышит издалека и тихо, но чаще срабатывает зря (например, на разговор в Discord). Ниже — реже ошибается, но звать нужно чётче.")}<b id="s-sens-v" class="val">${s.wake_sensitivity}</b></label>
       <input type="range" id="s-sens" min="1" max="10" value="${s.wake_sensitivity}"><div class="scale"><span>осторожно</span><span>слышит всё</span></div></div>
@@ -63,6 +64,7 @@ export function viewSpeaker() {
     put({ home_use: { [ch]: on } }).then(() => toast(`${name}: ${on ? "используется" : "не используется"}`));
   }));
   $("#s-wake").addEventListener("change", (e) => put({ wake_enabled: e.target.checked }).then(() => toast(e.target.checked ? "Джарвис снова слушает" : "Джарвис больше не откликается на слово")));
+  $("#s-chime").addEventListener("change", (e) => put({ wake_chime: e.target.checked }).then(() => toast(e.target.checked ? "Сигнал при активации включён" : "Сигнал при активации выключен")));
   $("#s-check").addEventListener("change", (e) => put({ wake_check: e.target.checked }).then(() => toast(e.target.checked ? "Сначала проверяю имя, потом отвечаю" : "Отклик сразу, как у Алисы")));
   $("#s-city").addEventListener("change", (e) => put({ city: e.target.value.trim() }).then(() => toast("Город сохранён")));
   $("#s-room").addEventListener("change", (e) => put({ speaker_room: e.target.value.trim() }).then(() => toast(e.target.value.trim() ? `Колонка стоит: ${e.target.value.trim()}` : "Комната колонки не задана")));

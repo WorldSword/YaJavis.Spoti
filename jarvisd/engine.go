@@ -41,6 +41,7 @@ type Engine struct {
 	spotify  *Spotify    // Soloist (Spotify Connect), если стоит на колонке
 	train    *Trainer    // записи для дообучения слова
 	bg       *BgRecorder // длинная запись фона на сервер
+	chime    *Chime      // «тилиньк» при активации, как у Алисы
 
 	dataDir string
 
@@ -195,6 +196,7 @@ func (e *Engine) Trigger(source string) {
 	}
 	if sure {
 		e.leds.Set(LedListening) // сразу, без сети
+		go e.playWakeChime(context.Background())
 	}
 	if e.wake != nil {
 		e.wake.Reset() // хвост этого же слова не должен сработать ещё раз
@@ -672,6 +674,7 @@ func (e *Engine) converse(byWord, sure bool, preroll, clip []int16, quick <-chan
 			}
 			verified = true
 			e.leds.Set(LedListening)
+			go e.playWakeChime(context.Background())
 			for _, h := range held {
 				_ = e.player.Write(h)
 			}
@@ -1242,4 +1245,14 @@ func (e *Engine) chatgptFact() {
 	}
 	lastFactTrack.Store(id)
 	chatgptChat.AddFact("включил на YouTube: «" + title + "» — " + author)
+}
+
+// playWakeChime — «тилиньк» при активации; выключается в настройках колонки.
+func (e *Engine) playWakeChime(ctx context.Context) {
+	if e.chime == nil || e.store.Get().WakeChimeOff {
+		return
+	}
+	if err := e.chime.Play(ctx); err != nil {
+		log.Printf("Джарвис: сигнал активации не сыграл: %v", err)
+	}
 }

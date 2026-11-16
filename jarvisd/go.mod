@@ -9,6 +9,7 @@ go 1.27.4
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261110204830-f493a2b600d6
+	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/newfpv/YaJavis/hardware v0.0.0
 	github.com/newfpv/YaJavis/installer/soloist v0.0.0
 	github.com/pion/rtp v1.10.6

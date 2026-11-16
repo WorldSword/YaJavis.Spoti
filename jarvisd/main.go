@@ -603,6 +603,7 @@ func main() {
 		journal: journal, wake: LoadWake(*dataDir, store), dataDir: *dataDir, train: &Trainer{dataDir: *dataDir, store: store},
 		bg: &BgRecorder{store: store, client: func() *http.Client { return proxy.ClientFor("gdrive", 0) },
 			drive: &GDrive{store: store, client: func() *http.Client { return proxy.ClientFor("gdrive", 0) }}}}
+	engine.chime = NewChime(func() int { s := store.Get(); return s.VoiceVolume() })
 	engine.stt = NewSTT(func() string { return store.Get().OpenAIKey }, func() *http.Client { return proxy.ClientFor("openai", 0) })
 	engine.cmds = NewCmdSpotter(*dataDir, engine.onCommand)
 	player.OnStart, player.OnExit = engine.spotifyVoiceStart, engine.spotifyVoiceEnd // Spotify молчит, пока говорит Джарвис
