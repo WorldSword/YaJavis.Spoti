@@ -85,3 +85,27 @@ func TestCardNameSnippet(t *testing.T) {
 		t.Errorf("имя карты %q, ошибка %v", out, err)
 	}
 }
+
+// Старый запуск start.sh задаёт устройство отдельно, в кавычках: на Станции 2 запускается именно он.
+func TestPatchAudioDeviceStartScript(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "start.sh")
+	body := "case \"$COMPAT\" in\n    *plum*)\n        export APULSE_PLAYBACK_DEVICE=\"sysdefault:CARD=$CARD_NAME\"\n        ;;\n    *)\n        export APULSE_PLAYBACK_DEVICE=\"plug:default\"\n        ;;\nesac\n"
+	if err := os.WriteFile(file, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := patchAudioDevice(dir)
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	b, _ := os.ReadFile(file)
+	if !strings.Contains(string(b), cardNameShell) {
+		t.Errorf("start.sh не исправлен:\n%s", b)
+	}
+	if out, err := exec.Command("sh", "-n", file).CombinedOutput(); err != nil {
+		t.Errorf("start.sh не разбирается оболочкой: %v %s", err, out)
+	}
+	if again, _ := patchAudioDevice(dir); again {
+		t.Error("повторная правка start.sh")
+	}
+}
