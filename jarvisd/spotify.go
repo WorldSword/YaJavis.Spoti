@@ -4,13 +4,16 @@ package main
 // YaJavis только находит его и вызывает его команды: движок Spotify проприетарный и в релиз не входит.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,7 +23,14 @@ type spotifyExec func(ctx context.Context, name string, args ...string) ([]byte,
 type Spotify struct {
 	root   string
 	exec   spotifyExec
-	OnPlay func() // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
+	clock  func() time.Time
+	poll   time.Duration // как часто Run спрашивает Soloist, что играет
+	OnPlay func()        // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
+
+	mu     sync.Mutex
+	last   SpotifyNow // последний удачный ответ Soloist
+	lastAt time.Time
+	ok     bool
 }
 
 // soloistRoots — где Soloist может лежать: установка через YAM, затем автономная.
@@ -35,7 +45,7 @@ func NewSpotify() *Spotify {
 }
 
 func newSpotifyAt(root string, exec spotifyExec) *Spotify {
-	return &Spotify{root: root, exec: exec}
+	return &Spotify{root: root, exec: exec, clock: time.Now, poll: 2 * time.Second}
 }
 
 // findSoloistRoot — первая папка, где лежит scripts/control.sh Soloist; пусто, если Soloist не найден.
@@ -140,4 +150,138 @@ func spotifyRequest(text string) (string, bool) {
 		q = re.ReplaceAllString(q, " ")
 	}
 	return strings.Trim(strings.Join(strings.Fields(q), " "), " ,.!?"), true
+}
+
+// SpotifyNow — что сейчас у Soloist. Имена полей JSON — по README Soloist; сверить с реальным `now --json` на колонке.
+type SpotifyNow struct {
+	Playing       bool
+	Title, Artist string
+	Cover, URI    string
+	Pos, Dur      float64 // секунды
+}
+
+func parseSpotifyNow(b []byte) (SpotifyNow, error) {
+	// Вывод команды может идти вместе с журналом Soloist: берём только сам объект.
+	if i, j := bytes.IndexByte(b, '{'), bytes.LastIndexByte(b, '}'); i >= 0 && j > i {
+		b = b[i : j+1]
+	}
+	var raw struct {
+		IsPlaying  bool    `json:"is_playing"`
+		ProgressMs float64 `json:"progress_ms"`
+		Item       *struct {
+			URI        string  `json:"uri"`
+			Name       string  `json:"name"`
+			DurationMs float64 `json:"duration_ms"`
+			Artists    []struct {
+				Name string `json:"name"`
+			} `json:"artists"`
+			Album struct {
+				Images []struct {
+					URL string `json:"url"`
+				} `json:"images"`
+			} `json:"album"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return SpotifyNow{}, err
+	}
+	if raw.Item == nil {
+		return SpotifyNow{}, nil
+	}
+	it := raw.Item
+	now := SpotifyNow{Playing: raw.IsPlaying, Title: it.Name, URI: it.URI, Pos: raw.ProgressMs / 1000, Dur: it.DurationMs / 1000}
+	if now.Title == "" && now.URI != "" {
+		now.Title = "Spotify"
+	}
+	names := make([]string, 0, len(it.Artists))
+	for _, a := range it.Artists {
+		names = append(names, a.Name)
+	}
+	now.Artist = strings.Join(names, ", ")
+	if len(it.Album.Images) > 0 {
+		now.Cover = it.Album.Images[0].URL
+	}
+	return now, nil
+}
+
+// Now — спросить Soloist, что играет, и запомнить ответ.
+func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
+	if !s.Installed() {
+		return SpotifyNow{}, errors.New("Soloist не найден на колонке")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	bin, lib := path.Join(s.root, "bin", "soloist"), path.Join(s.root, "lib64")
+	ctl := []string{"ctl", "-w", "127.0.0.1:9090", "now", "--json"}
+	env := "LD_LIBRARY_PATH=" + lib
+	out, err := s.exec(ctx, "env", append([]string{env, bin}, ctl...)...)
+	if ld := path.Join(lib, "ld-linux-aarch64.so.1"); err != nil {
+		if _, serr := os.Stat(ld); serr == nil { // как в scripts/status.sh Soloist: свой загрузчик, если системный не подходит
+			out, err = s.exec(ctx, "env", append([]string{env, ld, "--library-path", lib, "--argv0", bin, bin}, ctl...)...)
+		}
+	}
+	var now SpotifyNow
+	if err == nil {
+		now, err = parseSpotifyNow(out)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.last, s.ok = SpotifyNow{}, false
+		return SpotifyNow{}, err
+	}
+	s.last, s.lastAt, s.ok = now, s.clock(), true
+	return now, nil
+}
+
+// active — есть свежий ответ Soloist с треком; s.mu занят.
+func (s *Spotify) active() bool {
+	return s.ok && s.last.URI != "" && s.clock().Sub(s.lastAt) <= 3*time.Second
+}
+
+func (s *Spotify) Active() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active()
+}
+
+func (s *Spotify) Playing() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active() && s.last.Playing
+}
+
+func (s *Spotify) Paused() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active() && !s.last.Playing
+}
+
+// Snapshot — для страницы «Музыка».
+func (s *Spotify) Snapshot() MusicState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.active() {
+		return MusicState{Source: "spotify"}
+	}
+	n := s.last
+	return MusicState{Source: "spotify", Cover: n.Cover, Playing: n.Playing, Paused: !n.Playing,
+		Track: Track{ID: n.URI, Title: n.Title, Author: n.Artist}, Pos: n.Pos, Dur: n.Dur}
+}
+
+// Run — раз в s.poll спрашивать Soloist, что играет, пока не отменят ctx.
+func (s *Spotify) Run(ctx context.Context) {
+	if !s.Installed() {
+		return
+	}
+	t := time.NewTicker(s.poll)
+	defer t.Stop()
+	for {
+		_, _ = s.Now(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
