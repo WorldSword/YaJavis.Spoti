@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -129,7 +127,7 @@ func soloistSettings(sp *Spotify) (env, api map[string]string) {
 func (w *Web) spotifyState() map[string]any {
 	sp := w.spotifySoloist()
 	if !sp.Installed() {
-		return map[string]any{"installed": false, "install": sp.Installer().Status()}
+		return map[string]any{"installed": false}
 	}
 	env, api := soloistSettings(sp)
 	_, yam := yamRootOf(sp.Root())
@@ -215,33 +213,4 @@ func (w *Web) spotifyRestart(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(rw, 200, w.spotifyState())
-}
-
-// spotifyInstall — «Установить Soloist»: скачать официальный релиз и запустить его install.sh на колонке.
-func (w *Web) spotifyInstall(rw http.ResponseWriter, r *http.Request) {
-	sp := w.spotifySoloist()
-	if sp == nil {
-		bad(rw, "Spotify недоступен")
-		return
-	}
-	if sp.Installed() {
-		writeJSON(rw, 409, map[string]any{"error": "Soloist уже установлен"})
-		return
-	}
-	var req struct {
-		APIKey       string `json:"api_key"`
-		DeviceName   string `json:"device_name"`
-		ClientID     string `json:"client_id"`
-		ClientSecret string `json:"client_secret"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil {
-		bad(rw, "не понял запрос")
-		return
-	}
-	o := soloistInstallOpts{strings.TrimSpace(req.APIKey), strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret)}
-	if err := sp.Installer().Start(o); err != nil {
-		bad(rw, err.Error())
-		return
-	}
-	writeJSON(rw, 202, map[string]any{"ok": true})
 }

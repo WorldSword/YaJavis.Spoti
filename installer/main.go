@@ -396,6 +396,7 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IP, Password, OpenAI, Vless, Timezone string
 		Clean                                 bool
+		Soloist                               SoloistOpts // необязательно: ключ Soloist — тогда ставим и Spotify
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]any{"error": "пустой запрос"})
@@ -405,8 +406,12 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": "Пароль — минимум 6 символов"})
 		return
 	}
+	if err := req.Soloist.validate(); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
 	err := startJob(func(j *job) error {
-		return install(j, req.IP, req.Password, req.OpenAI, req.Vless, req.Timezone, req.Clean)
+		return install(j, req.IP, req.Password, req.OpenAI, req.Vless, req.Timezone, req.Clean, req.Soloist)
 	})
 	if err != nil {
 		writeJSON(w, 409, map[string]any{"error": err.Error()})
@@ -415,7 +420,7 @@ func handleInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-func install(j *job, ip, password, openai, vless, tz string, clean bool) error {
+func install(j *job, ip, password, openai, vless, tz string, clean bool, spotify SoloistOpts) error {
 	j.log("Подключаюсь к колонке %s…", ip)
 	sp, err := inspect(ip)
 	if err != nil {
@@ -572,6 +577,17 @@ func install(j *job, ip, password, openai, vless, tz string, clean bool) error {
 		j.log("Корень прошивки не открылся на запись: %s", strings.TrimSpace(out))
 		return fmt.Errorf("Джарвис установлен, но автозапуск добавить не удалось: корневой раздел колонки только для чтения (%v). "+
 			"Добавьте в автозапуск своей прошивки скрипт %s/S98jarvisd (он запускается до S99quasar) и перезагрузите колонку", err, remoteDir)
+	}
+	if spotify.enabled() {
+		// Soloist — отдельный проект; его сбой не отменяет установку Джарвиса, а только попадает в журнал
+		freeKB := func() int {
+			o, _, _ := a.Shell("df -k /data | awk 'NR==2{print $4}'", 10*time.Second)
+			kb, _ := strconv.Atoi(strings.TrimSpace(o))
+			return kb
+		}
+		if err := installSoloist(j, a, freeKB, spotify); err != nil {
+			j.log("Spotify: не получилось — %v. Джарвис установлен; Soloist можно поставить позже, повторив установку.", err)
+		}
 	}
 	_, _ = run("sync")
 	j.log("Перезагружаю колонку — Алиса загрузится уже с микрофоном для Джарвиса (около минуты)…")

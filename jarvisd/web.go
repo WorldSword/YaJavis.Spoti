@@ -105,7 +105,6 @@ func (w *Web) Serve(addr string) error {
 	mux.HandleFunc("PUT /api/youtube", w.auth(w.putYouTube))
 	mux.HandleFunc("PUT /api/spotify", w.auth(w.putSpotify))
 	mux.HandleFunc("POST /api/spotify/restart", w.auth(w.spotifyRestart))
-	mux.HandleFunc("POST /api/spotify/install", w.auth(w.spotifyInstall))
 	mux.HandleFunc("GET /api/elevenlabs/voices", w.auth(w.elevenVoices))
 	mux.HandleFunc("GET /api/home-assistant", w.auth(w.getHomeAssistant))
 	mux.HandleFunc("POST /api/home-assistant/rooms/discover", w.auth(w.discoverHARooms))
