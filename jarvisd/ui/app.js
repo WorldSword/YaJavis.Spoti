@@ -602,7 +602,7 @@ function elevenKeysHtml() {
 }
 
 function connDefs() {
-  const k = S.keys, v = S.vless, cg = S.chatgpt, lg = cg.login || {}, yt = S.youtube || {}, ya = yt.account || {};
+  const k = S.keys, v = S.vless, cg = S.chatgpt, lg = cg.login || {}, yt = S.youtube || {}, ya = yt.account || {}, sp = S.spotify || {};
   const keyBody = (id, place, how, label) => `<div class="f"><label for="k-${id}">${label ? label[0] : k[id] ? "Новый ключ" : "Ключ"}</label><div class="row"><input type="password" id="k-${id}" placeholder="${place}" autocomplete="off"><button class="btn primary" data-key="${id}">${label ? label[1] : k[id] ? "Заменить" : "Сохранить"}</button></div></div>
     ${how ? `<details${k[id] ? "" : " open"}><summary>Где его взять</summary><ol class="how">${how}</ol></details>` : ""}`;
   const key = (id, o) => ({ id, group: o.group, mono: o.mono, name: o.name, about: o.about, more: o.more,
@@ -659,6 +659,20 @@ function connDefs() {
           <div class="row"><button class="btn sm" id="yt-save">${yt.set ? "Заменить" : "Сохранить и проверить"}</button></div></details>`
         + vpnRow("youtube"),
       drop: ya.signed_in ? `<button class="btn ghost danger" id="ya-out">Выйти</button>` : yt.set ? `<button class="btn ghost danger" id="yt-clear">Убрать куки</button>` : "" },
+    { id: "spotify", group: "home", mono: "Sp", name: "Spotify", about: "Музыка голосом: «Джарвис, включи … в Spotify». Играет Soloist — его ставите вы сами, Джарвис только передаёт запрос",
+      more: "Нужен Spotify Premium и установленный Soloist (Spotify Connect на колонке).",
+      on: !!sp.installed, need: !sp.installed, wait: !!sp.installed && !sp.running,
+      state: !sp.installed ? "Soloist не найден" : sp.playing ? "играет" : sp.running ? "готов" : "Soloist не отвечает",
+      body: !sp.installed ? `<p class="note">Установите Soloist на колонку (<a href="https://github.com/Horohi/soloist-station-lite" target="_blank" rel="noopener">инструкция</a>) и перезапустите Джарвиса — карточка найдёт его сама. Ищу в /data/yam/share/horohi.soloist и /data/opt/soloist.</p>`
+        : `<div class="cn-ok">${icon("done")}<span>Soloist найден<small>${esc(sp.root || "")}</small></span></div>
+        <div class="f"><label for="sp-name">Имя устройства в Spotify</label><input id="sp-name" type="text" value="${esc(sp.device_name || "")}" autocomplete="off" placeholder="Например: Станция"></div>
+        <div class="f"><label for="sp-key">API-ключ Soloist</label><input id="sp-key" type="password" value="${esc(sp.api_key || "")}" autocomplete="off" placeholder="Вставьте ключ"></div>
+        <details class="mini"><summary>Свои Client ID и Secret (по желанию)</summary>
+          <div class="f"><label for="sp-cid">Client ID</label><input id="sp-cid" type="password" value="${esc(sp.client_id || "")}" autocomplete="off"></div>
+          <div class="f"><label for="sp-sec">Client Secret</label><input id="sp-sec" type="password" value="${esc(sp.client_secret || "")}" autocomplete="off"></div></details>
+        <div class="row"><button class="btn primary" id="sp-save">Сохранить</button><button class="btn" id="sp-restart">Перезапустить Soloist</button></div>
+        <p class="note">Ключ API работает только с Spotify Premium. После смены ключа перезапустите Soloist${sp.yam ? "" : " вручную — он стоит отдельно от Яндекс-приложения"}.</p>`,
+      drop: "" },
     { id: "vpn", group: "net", icon: "shield", name: "VPN для Джарвиса", about: "Через VPN идёт только сам Джарвис, Алиса — всегда напрямую. Что именно пускать через VPN — галочки ниже",
       on: !!v.set && !v.error, bad: !!v.error, need: !v.set, state: v.set ? (v.error ? "ошибка" : esc(v.name || v.host)) : "не задан",
       body: `${v.set ? `<div class="vpn ${v.error ? "bad" : "ok"}"><b>${esc(v.name || v.host)}</b><small>${esc(v.host)}:${esc(v.port)} · ${esc(v.network)} + ${esc(v.security)}</small></div>` : `<p class="note">Пока не задан — колонка ходит в интернет напрямую. Вставьте ссылку vless://… из вашего VPN (3x-ui, Marzban, Hiddify и т. п.).</p>`}
@@ -852,6 +866,13 @@ async function connClick(e) {
       return act(btn, async () => { await api("PUT", "/api/youtube", { cookies: txt }); $("#yt-cookies").value = ""; await redraw(); }, "YouTube принял вход");
     }
     case "yt-clear": if (confirm("Убрать вход в YouTube с колонки?")) act(btn, async () => { await api("DELETE", "/api/youtube"); await redraw(); }); return;
+    case "sp-save": {
+      const f = { device_name: "#sp-name", api_key: "#sp-key", client_id: "#sp-cid", client_secret: "#sp-sec" }, body = {};
+      for (const [k, sel] of Object.entries(f)) { const el = $(sel); if (el && el.value !== el.defaultValue) body[k] = el.value.trim(); }
+      if (!Object.keys(body).length) return toast("Ничего не изменилось");
+      return act(btn, async () => { await api("PUT", "/api/spotify", body); await redraw(); }, "Сохранено — перезапустите Soloist");
+    }
+    case "sp-restart": return act(btn, async () => { await api("POST", "/api/spotify/restart"); await redraw(); }, "Soloist перезапускается");
     case "vless-save": return act(btn, async () => { await api("PUT", "/api/vless", { link: $("#vless").value }); $("#vless").value = ""; await redraw(); }, "Ссылка сохранена — проверьте связь");
     case "vless-clear": if (confirm("Убрать VPN? Колонка пойдёт в интернет напрямую.")) act(btn, async () => { await api("PUT", "/api/vless", { link: "" }); await redraw(); }); return;
   }
@@ -1081,12 +1102,12 @@ function setArt(img, art, t) {
 function drawPlayer() {
   const np = $("#np");
   if (!np || !M) return;
-  const t = M.track || {}, on = M.playing || M.paused, ya = M.source === "yandex";
+  const t = M.track || {}, on = M.playing || M.paused, ya = extSrc(), nm = srcName();
   np.dataset.state = M.loading && !on ? "loading" : !on ? "idle" : M.paused ? "paused" : "playing";
   setArt($("#np-art"), on ? artOf(t, true) : "", t);
-  $("#np-kicker").innerHTML = on ? `<span class="np-eq" aria-hidden="true"><i></i><i></i><i></i></span>${ya ? "Яндекс Музыка" : "YouTube"}${M.paused ? " · пауза" : ""}` : M.loading ? "ищу…" : "Плеер";
+  $("#np-kicker").innerHTML = on ? `<span class="np-eq" aria-hidden="true"><i></i><i></i><i></i></span>${nm}${M.paused ? " · пауза" : ""}` : M.loading ? "ищу…" : "Плеер";
   swapText($("#np-title"), on ? t.Title || "…" : M.loading ? "Ищу и включаю…" : "Тишина");
-  swapText($("#np-artist"), on ? t.Author || (ya ? "Яндекс Музыка" : "YouTube") : "Включите что-нибудь с YouTube или попросите Алису");
+  swapText($("#np-artist"), on ? t.Author || nm : "Включите что-нибудь с YouTube, скажите «Джарвис, включи … в Spotify» или попросите Алису");
   $("#np-toggle").innerHTML = icon(M.paused ? "play" : "pause", "solid");
   $("#np-toggle").setAttribute("aria-label", M.paused ? "Продолжить" : "Пауза");
   $("#np-prev").disabled = !ya && (M.history || []).length < 2;
@@ -1101,7 +1122,7 @@ function musicAct(a, b) {
   if (b) { b.classList.remove("k-prev", "k-next", "k-pop"); void b.offsetWidth; b.classList.add(a === "prev" ? "k-prev" : a === "next" ? "k-next" : "k-pop"); }
   if (a === "copy") { const l = musicLink(); if (l) copyText(l).then(() => toast("Ссылка скопирована"), () => toast("Не получилось скопировать", true)); return; }
   if (a === "radio") { music({ action: "radio", on: !M.radio }, b).then((ok) => ok && toast(M.radio ? "Радио: после очереди — похожее" : "Радио выключено: после очереди тишина")); return; }
-  if (a === "prev" && M.source !== "yandex") { const h = (M.history || [])[1]; if (h) music({ action: "id", query: h.ID }, b); return; }
+  if (a === "prev" && !extSrc()) { const h = (M.history || [])[1]; if (h) music({ action: "id", query: h.ID }, b); return; }
   music({ action: a === "toggle" ? (M.paused ? "resume" : "pause") : a }, b);
 }
 
@@ -1598,11 +1619,18 @@ function navPill() {
 }
 
 // ---------------------------------------------------------------- плеер — отдельная страница
-const artOf = (t, big) => !t?.ID ? "" : M?.source === "yandex" ? (M.cover || "") : `https://i.ytimg.com/vi/${t.ID}/${big ? "maxresdefault" : "mqdefault"}.jpg`;
-const musicLink = () => !M?.track?.ID ? "" : M.link || `https://youtu.be/${M.track.ID}`;
+const extSrc = () => M?.source === "yandex" || M?.source === "spotify"; // очередью управляет внешний плеер
+const srcName = () => M?.source === "yandex" ? "Яндекс Музыка" : M?.source === "spotify" ? "Spotify" : "YouTube";
+const artOf = (t, big) => !t?.ID ? "" : extSrc() ? (M.cover || "") : `https://i.ytimg.com/vi/${t.ID}/${big ? "maxresdefault" : "mqdefault"}.jpg`;
+const musicLink = () => {
+  const id = M?.track?.ID;
+  if (!id) return "";
+  if (M.source === "spotify") { const m = /^spotify:(track|episode):(\w+)$/.exec(id); return M.link || (m ? `https://open.spotify.com/${m[1]}/${m[2]}` : ""); }
+  return M.link || `https://youtu.be/${id}`;
+};
 
 function viewPlayer() {
-  $("#view").innerHTML = `<header class="ph"><h1>Плеер</h1><p class="sub">Всё, что играет на колонке: YouTube Джарвиса и Яндекс Музыка Алисы</p></header>
+  $("#view").innerHTML = `<header class="ph"><h1>Плеер</h1><p class="sub">Всё, что играет на колонке: Spotify, YouTube Джарвиса и Яндекс Музыка Алисы</p></header>
   <section class="card pl-hero" id="plh" data-state="idle"><img class="pl-glow" id="pl-glow" alt="">
     <div class="pl-top">
       <div class="pl-cover" id="pl-cover">${icon("music")}<img id="pl-img" alt=""></div>
@@ -1692,20 +1720,20 @@ function qrowHtml(t, { badge = "", cur = false, qi = null, art = "" } = {}) {
 function drawPlayerPage() {
   const h = $("#plh");
   if (!h || !M) return;
-  const t = M.track || {}, on = M.playing || M.paused, ya = M.source === "yandex";
+  const t = M.track || {}, on = M.playing || M.paused, ya = extSrc(), sp = M.source === "spotify", nm = srcName();
   h.dataset.state = M.loading && !on ? "loading" : !on ? "idle" : M.paused ? "paused" : "playing";
   const art = on ? artOf(t, true) : "", glow = $("#pl-glow");
   setArt($("#pl-img"), art, t);
   const g = art.replace("maxresdefault", "mqdefault");
   if (glow.dataset.src !== g) { glow.dataset.src = g; if (g) glow.src = g; else glow.removeAttribute("src"); }
   swapText($("#pl-title"), on ? t.Title || "…" : M.loading ? "Ищу и включаю…" : "Ничего не играет");
-  swapText($("#pl-artist"), on ? t.Author || (ya ? "Яндекс Музыка" : "YouTube") : "Скажите «Джарвис, включи с ютуба …» или попросите Алису");
-  $("#pl-kick").textContent = on ? `${ya ? "Яндекс Музыка" : "YouTube"}${M.paused ? " · пауза" : ""}` : M.loading ? "YouTube · загрузка" : "Тишина";
-  const chips = on ? [ya ? "через Алису" : "через Джарвиса", M.album && `Альбом «${M.album}»`, !ya && M.radio && "радио"].filter(Boolean) : [];
+  swapText($("#pl-artist"), on ? t.Author || nm : "Скажите «Джарвис, включи … в Spotify», «включи с ютуба …» или попросите Алису");
+  $("#pl-kick").textContent = on ? `${nm}${M.paused ? " · пауза" : ""}` : M.loading ? "YouTube · загрузка" : "Тишина";
+  const chips = on ? [sp ? "через Soloist" : ya ? "через Алису" : "через Джарвиса", M.album && `Альбом «${M.album}»`, !ya && M.radio && "радио"].filter(Boolean) : [];
   const link = on ? musicLink() : "", open = $("#pl-open");
   if (link) open.href = link; else open.removeAttribute("href");
   open.classList.toggle("hidden", !link);
-  open.dataset.tip = ya ? "Открыть в Яндекс Музыке" : "Открыть на YouTube";
+  open.dataset.tip = sp ? "Открыть в Spotify" : ya ? "Открыть в Яндекс Музыке" : "Открыть на YouTube";
   const ch = chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("");
   if ($("#pl-chips").dataset.h !== ch) { $("#pl-chips").dataset.h = ch; $("#pl-chips").innerHTML = ch; }
   $("#pl-dur").textContent = M.dur ? clockStr(M.dur) : "";
@@ -1717,7 +1745,7 @@ function drawPlayerPage() {
   $("#pl-radio").classList.toggle("hidden", ya);
   $("#pl-copy").classList.toggle("hidden", !link);
   let qh;
-  if (ya) qh = on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>`, art: M.cover }) + `<p class="empty">Очередью Яндекс Музыки управляет Алиса: «Алиса, следующий трек», «Алиса, включи похожее».</p>` : "";
+  if (ya) qh = on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>`, art: M.cover }) + `${sp ? `<p class="empty">Очередью Spotify управляет приложение Spotify. Здесь — «Джарвис, следующий трек» и «пауза».</p>` : `<p class="empty">Очередью Яндекс Музыки управляет Алиса: «Алиса, следующий трек», «Алиса, включи похожее».</p>`}` : "";
   else {
     const next = M.next || [], nq = M.queue || 0;
     qh = (on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>` }) : "") +
@@ -1725,7 +1753,7 @@ function drawPlayerPage() {
   }
   if (!qh) qh = `<p class="empty">Очередь пуста. Найдите трек выше и нажмите «+» или скажите «Джарвис, добавь в очередь …»</p>`;
   if ($("#pl-queue").dataset.h !== qh) { $("#pl-queue").dataset.h = qh; $("#pl-queue").innerHTML = qh; }
-  $("#pl-qmeta").textContent = ya ? "Яндекс Музыка" : `${M.queue || 0} в очереди${M.radio ? " · дальше похожее" : ""}`;
+  $("#pl-qmeta").textContent = ya ? nm : `${M.queue || 0} в очереди${M.radio ? " · дальше похожее" : ""}`;
   const hist = (M.history || []).filter((x) => !(on && !ya && x.ID === t.ID)).slice(0, 12);
   const hh = hist.length ? hist.map((x) => qrowHtml(x)).join("") : `<p class="empty">Здесь появится то, что включали с YouTube</p>`;
   if ($("#pl-hist").dataset.h !== hh) { $("#pl-hist").dataset.h = hh; $("#pl-hist").innerHTML = hh; }
