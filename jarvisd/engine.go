@@ -1160,6 +1160,7 @@ func (e *Engine) aliceStarted() {
 		return
 	}
 	ytButtonPaused.Store(false) // человек сам выбрал музыку Алисы
+	e.pauseSpotifyIfPlaying()
 	if e.music.Playing() {
 		e.music.Pause()
 		log.Printf("музыка: Алиса включила свою — YouTube на паузу")
@@ -1171,6 +1172,7 @@ var lastFactTrack atomic.Value // id видео, о котором уже зап
 
 func (e *Engine) youtubeStarted() {
 	e.chatgptFact()
+	e.pauseSpotifyIfPlaying()
 	if !e.alice.Playing() {
 		return
 	}

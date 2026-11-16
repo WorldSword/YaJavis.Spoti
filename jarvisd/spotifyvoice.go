@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 )
 
 // aliceTextFunc — команда штатной Алисе; в тестах подменяется.
@@ -24,10 +25,34 @@ func (e *Engine) playSpotifyContext(ctx context.Context, query string) string {
 	return "Включаю в Spotify: " + query + "."
 }
 
+// spotifyOwns — команды управления (пауза, «продолжи», кнопки панели) относятся к Spotify:
+// он играет сейчас, либо стоит на паузе и больше никакой музыки (YouTube, Алиса) нет.
+func (e *Engine) spotifyOwns() bool {
+	sp := e.spotify
+	if sp.Playing() {
+		return true
+	}
+	return sp.Active() && !e.music.Active() && !e.alice.Active()
+}
+
+// pauseSpotifyIfPlaying — зазвучала другая музыка: Spotify на паузу, чтобы не играли вместе.
+func (e *Engine) pauseSpotifyIfPlaying() {
+	if !e.spotify.Playing() {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := e.spotify.Control(ctx, "pause"); err != nil {
+			log.Printf("spotify: пауза при запуске другой музыки: %v", err)
+		}
+	}()
+}
+
 // controlSpotify — «пауза», «продолжи», «следующее», «выключи», «что играет» для Spotify, пока он активен.
 func (e *Engine) controlSpotify(ctx context.Context, text string) (string, bool) {
 	sp := e.spotify
-	if !sp.Active() {
+	if !e.spotifyOwns() {
 		return "", false
 	}
 	action, _, _, ok := musicCommand(text)

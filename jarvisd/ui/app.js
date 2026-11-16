@@ -666,11 +666,11 @@ function connDefs() {
       body: !sp.installed ? `<p class="note">Установите Soloist на колонку (<a href="https://github.com/Horohi/soloist-station-lite" target="_blank" rel="noopener">инструкция</a>) и перезапустите Джарвиса — карточка найдёт его сама. Ищу в /data/yam/share/horohi.soloist и /data/opt/soloist.</p>`
         : `<div class="cn-ok">${icon("done")}<span>Soloist найден<small>${esc(sp.root || "")}</small></span></div>
         <div class="f"><label for="sp-name">Имя устройства в Spotify</label><input id="sp-name" type="text" value="${esc(sp.device_name || "")}" autocomplete="off" placeholder="Например: Станция"></div>
-        <div class="f"><label for="sp-key">API-ключ Soloist</label><input id="sp-key" type="password" value="${esc(sp.api_key || "")}" autocomplete="off" placeholder="Вставьте ключ"></div>
+        <div class="f"><label for="sp-key">API-ключ Soloist</label><input id="sp-key" type="password" value="" autocomplete="off" placeholder="${esc(sp.api_key || "Вставьте ключ")}"></div>
         <details class="mini"><summary>Свои Client ID и Secret (по желанию)</summary>
-          <div class="f"><label for="sp-cid">Client ID</label><input id="sp-cid" type="password" value="${esc(sp.client_id || "")}" autocomplete="off"></div>
-          <div class="f"><label for="sp-sec">Client Secret</label><input id="sp-sec" type="password" value="${esc(sp.client_secret || "")}" autocomplete="off"></div></details>
-        <div class="row"><button class="btn primary" id="sp-save">Сохранить</button><button class="btn" id="sp-restart">Перезапустить Soloist</button></div>
+          <div class="f"><label for="sp-cid">Client ID</label><input id="sp-cid" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_id || "")}"></div>
+          <div class="f"><label for="sp-sec">Client Secret</label><input id="sp-sec" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_secret || "")}"></div></details>
+        <div class="row"><button class="btn primary" id="sp-save">Сохранить</button>${sp.yam ? `<button class="btn" id="sp-restart">Перезапустить Soloist</button>` : ""}</div>
         <p class="note">Ключ API работает только с Spotify Premium. После смены ключа перезапустите Soloist${sp.yam ? "" : " вручную — он стоит отдельно от Яндекс-приложения"}.</p>`,
       drop: "" },
     { id: "vpn", group: "net", icon: "shield", name: "VPN для Джарвиса", about: "Через VPN идёт только сам Джарвис, Алиса — всегда напрямую. Что именно пускать через VPN — галочки ниже",

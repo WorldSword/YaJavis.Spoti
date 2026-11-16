@@ -103,7 +103,7 @@ func (w *Web) musicNow() MusicState {
 	if m != nil && m.Playing() {
 		return m.Snapshot()
 	}
-	if w.engine.spotify.Active() {
+	if w.engine.spotify.Playing() {
 		return w.engine.spotify.Snapshot()
 	}
 	if m != nil && m.Active() && !a.Playing() {
@@ -115,6 +115,9 @@ func (w *Web) musicNow() MusicState {
 			s.History = m.Snapshot().History
 		}
 		return s
+	}
+	if w.engine.spotify.Active() { // Spotify на паузе и больше ничего нет
+		return w.engine.spotify.Snapshot()
 	}
 	if m == nil {
 		return MusicState{Source: "youtube"}
@@ -138,7 +141,11 @@ func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := w.engine.music
-	if sp := w.engine.spotify; sp.Active() && !m.Playing() {
+	if sp := w.engine.spotify; !m.Playing() && w.engine.spotifyOwns() {
+		if req.Action == "seek" {
+			bad(rw, "у Spotify перемотка с панели недоступна")
+			return
+		}
 		if act, ok := spotifyPanelActions[req.Action]; ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()

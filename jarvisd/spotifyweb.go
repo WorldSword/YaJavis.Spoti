@@ -169,6 +169,10 @@ func (w *Web) putSpotify(rw http.ResponseWriter, r *http.Request) {
 		if (f.secret && val == mask(f.cur)) || val == f.cur {
 			continue
 		}
+		if f.secret && strings.HasPrefix(val, "задан") { // маска с приписанным текстом — не ключ
+			bad(rw, "в поле "+f.name+" осталась маска: сотрите её и вставьте ключ целиком")
+			return
+		}
 		if !validSoloistValue(val) {
 			bad(rw, "недопустимые символы в поле "+f.name)
 			return
