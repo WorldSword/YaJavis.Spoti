@@ -98,6 +98,8 @@ curl -fsSL https://github.com/newfpv/YaJavis/releases/latest/download/install.sh
 
 ## Панель управления
 
+Spotify голосом и в панели через Soloist — см. [docs/SPOTIFY.md](docs/SPOTIFY.md).
+
 Скриншоты показывают пример настроенной колонки. Новая установка начинается со стандартных значений: **город пустой, часовой пояс UTC, личные аккаунты не подключены**.
 
 <details open>
