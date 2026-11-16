@@ -212,7 +212,8 @@ func TestSoloistInstallValidatesInput(t *testing.T) {
 func TestSoloistInstallInstallScriptFails(t *testing.T) {
 	srv := releaseServer(t, goodArchive(t), "")
 	i := testInstaller(t, srv, "arm64", func(ctx context.Context, name string, args ...string) ([]byte, error) {
-		return []byte("ERROR: Недостаточно места в /data"), os.ErrInvalid
+		_ = os.WriteFile(args[len(args)-1], []byte("ERROR: Недостаточно места в /data"), 0o644)
+		return nil, os.ErrInvalid
 	})
 	_ = i.Start(soloistInstallOpts{APIKey: "spak_abc"})
 	s := waitInstall(t, i)

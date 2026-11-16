@@ -182,14 +182,21 @@ func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) er
 	i.setStep("запускаю установщик Soloist")
 	rctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
-	// ключи и имя идут отдельными аргументами, а не в тексте команды; на вопросы установщика отвечают
+	// Ключи и имя идут отдельными аргументами, а не в тексте команды. На вопросы установщика отвечают
 	// Client ID/Secret (по желанию), дальше — пустые ответы, то есть значения по умолчанию.
-	const script = `cd "$1" && { printf '%s\n%s\n' "$4" "$5"; yes ''; } | sh ./install.sh "$2" "$3"`
-	out, err := i.run(rctx, "sh", "-c", script, "sh", dir, o.APIKey, o.DeviceName, o.ClientID, o.ClientSecret)
+	// Вывод установщика уходит в файл: он запускает службу, которая держит открытым унаследованный канал вывода,
+	// и без этого мы ждали бы конца службы, а не конца установки.
+	logPath := filepath.Join(work, "install.log")
+	const script = `cd "$1" && { printf '%s\n%s\n' "$4" "$5"; yes ''; } | sh ./install.sh "$2" "$3" >"$6" 2>&1`
+	_, err = i.run(rctx, "sh", "-c", script, "sh", dir, o.APIKey, o.DeviceName, o.ClientID, o.ClientSecret, logPath)
 	if err != nil {
-		tail := strings.TrimSpace(ansiRe.ReplaceAllString(string(out), ""))
+		raw, _ := os.ReadFile(logPath)
+		tail := strings.TrimSpace(ansiRe.ReplaceAllString(string(raw), ""))
 		if r := []rune(tail); len(r) > 400 {
 			tail = "…" + string(r[len(r)-400:])
+		}
+		if tail == "" {
+			tail = err.Error()
 		}
 		return fmt.Errorf("установщик Soloist завершился ошибкой: %s", tail)
 	}
