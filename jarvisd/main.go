@@ -488,6 +488,36 @@ func main() {
 		sess.Close()
 		return
 	}
+	if len(os.Args) > 2 && (os.Args[1] == "plugin-say" || os.Args[1] == "plugin-tool") { // проверка плагинов без панели
+		// jarvisd plugin-say "фраза" — быстрые команды плагинов; jarvisd plugin-tool <имя> '{"арг":1}' — инструмент
+		dir := os.Getenv("JARVIS_DATA")
+		if dir == "" {
+			dir = "/data/opt/jarvisd"
+		}
+		h := NewPluginHost(dir, PluginHooks{Say: func(s string) { fmt.Println("сказал бы:", s) },
+			Client: func(t time.Duration) *http.Client { return &http.Client{Timeout: t} }}, func() *http.Client { return http.DefaultClient })
+		h.Load()
+		for _, p := range h.List() {
+			fmt.Printf("плагин %s %s: %s %s\n", p.ID, p.Version, map[bool]string{true: "работает", false: "не запущен"}[p.Running], p.Error)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if os.Args[1] == "plugin-say" {
+			ok, answer := h.Command(ctx, os.Args[2])
+			fmt.Printf("фраза «%s» → %s: %s\n", commandText(os.Args[2]), map[bool]string{true: "команда плагина", false: "не плагину"}[ok], answer)
+		} else {
+			args := "{}"
+			if len(os.Args) > 3 {
+				args = os.Args[3]
+			}
+			res, ok := h.CallTool(ctx, os.Args[2], args)
+			fmt.Printf("инструмент %s (найден: %v) → %s\n", os.Args[2], ok, res)
+		}
+		for _, rt := range h.running() {
+			rt.Stop()
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "diag-mic" { // почему нет микрофона — прислать вывод разработчику
 		dir := "/data/opt/jarvisd"
 		if len(os.Args) > 2 {
@@ -732,6 +762,38 @@ func main() {
 		inst.OnDone = func() { time.Sleep(2 * time.Second); restartSoon() }
 	}
 	go RunCounter(store, func() *http.Client { return updaterClient }, *dataDir)
+	pluginHost = NewPluginHost(*dataDir, PluginHooks{
+		Say:   engine.sayMusicStatus,
+		Alice: AliceText,
+		Info: func() map[string]any {
+			s := store.Get()
+			p := s.ActiveProfile()
+			return map[string]any{"city": p.City, "timezone": p.Timezone, "room": s.SpeakerRoom, "language": s.Language,
+				"model": stationModel().ID, "assistant": p.Name}
+		},
+		Client: func(timeout time.Duration) *http.Client { return proxy.ClientFor("plugins", timeout) },
+	}, func() *http.Client { return updaterClient })
+	if v := os.Getenv("JARVIS_GITHUB_API"); v != "" { // для разработки: свой «GitHub» с каталогом плагинов
+		githubAPI = v
+	}
+	if v := os.Getenv("JARVIS_GITHUB_RAW"); v != "" {
+		githubRaw = v
+		pluginHost.index = v + "/" + defaultRepo + "/main/plugins/index.json"
+	}
+	pluginSettingsMap = func() map[string]any {
+		var m map[string]any
+		b, _ := json.Marshal(store.Get())
+		_ = json.Unmarshal(b, &m)
+		return m
+	}
+	go func() {
+		pluginHost.Load()
+		pluginHost.EnsureLoop()
+	}()
+	updater.prepare = func(ctx context.Context, tag string) error {
+		_, err := pluginHost.EnsureFor(ctx, tag, true)
+		return err
+	}
 	web := &Web{store: store, proxy: proxy, engine: engine, journal: journal, started: time.Now(), dataDir: *dataDir, uiDir: *uiDir,
 		updater: updater, stats: &Stats{dataDir: *dataDir}}
 	go web.stats.Run()

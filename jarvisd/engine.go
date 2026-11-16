@@ -406,7 +406,8 @@ func (e *Engine) instructions(s Settings, p Profile) string {
 		}
 		text += "\n\nГлавное, не забывай: ты — голосовой ассистент Джарвис внутри умной колонки Яндекс Станция у хозяина дома, " +
 			"а не ChatGPT в приложении. Говоришь вслух, коротко, своим характером. Что делать на колонке (музыка, YouTube, свет, " +
-			"поиск, погода) — передаёшь бэкенду, он делает. Твой характер:\n" + persona
+			"поиск, погода, таймеры, будильники, напоминания) — передаёшь бэкенду, он делает: таймеры и будильники ставит Алиса " +
+			"на этой же колонке, так что не говори, что не умеешь. Твой характер:\n" + persona
 	} else if h := e.journal.History(); chatgptChat == nil && len(h) > 0 {
 		var ctx []map[string]string
 		for _, t := range h {
@@ -686,6 +687,24 @@ func (e *Engine) converse(byWord, sure bool, preroll, clip []int16, quick <-chan
 			}
 			note("стоп", text, "")
 			return true
+		}
+		if pluginHost != nil { // быстрые команды плагинов — без модели
+			pctx, pcancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ok, answer := pluginHost.Command(pctx, cmd)
+			pcancel()
+			if ok {
+				quiet()
+				closeVoice()
+				log.Printf("Джарвис: «%s» → плагин (%s)", text, from)
+				note("плагин", text, answer)
+				if strings.TrimSpace(answer) != "" {
+					e.sayMusicStatus(answer)
+				} else if e.player.Start(MicRate) == nil {
+					_ = e.player.Write(earcon(true))
+					e.player.Finish(2 * time.Second)
+				}
+				return true
+			}
 		}
 		if e.music.hasProposal() && proposalReply(cmd) != "" {
 			quiet()

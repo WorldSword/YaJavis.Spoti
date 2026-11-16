@@ -10,11 +10,14 @@ package main
 // иногда не по порядку или теряются. Раньше пакеты декодировались как пришли: перепутанный порядок портил
 // декодер, потерянный давал дырку, а пачка после задержки — опустевший плеер. Теперь: порядок по номеру
 // пакета, потерянный восстанавливаем из избыточных данных следующего (Opus FEC) или маскируем (PLC),
-// а в начале каждой фразы копим 80 мс запаса.
+// а в начале каждой фразы копим запас. Запас подстраивается под сеть: после провала растёт, и следующий звонок
+// начинается с того, до чего дорос прошлый (понемногу уменьшаясь, когда сеть успокоилась). Раньше каждый звонок
+// стартовал с 80 мс, и на рваном Wi-Fi/VPN голос заикался в начале каждого разговора, пока запас не дорастал.
 
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/rtp"
@@ -147,10 +150,22 @@ func WarmChatGPTLoop(active func() bool) {
 const (
 	jbFrame   = chatgptRate / 50 // 20 мс
 	jbHold    = 3                // сколько пакетов после дырки ждём опоздавший, прежде чем считать его потерянным
-	jbPreroll = 4                // пакетов (80 мс) запаса в начале фразы
-	jbMaxPre  = 12               // до 240 мс запаса, если сеть (Wi-Fi, VPN) отдаёт пакеты рывками
+	jbPreroll = 6                // пакетов (120 мс) запаса в начале фразы — меньше не начинаем
+	jbMaxPre  = 20               // до 400 мс запаса, если сеть (Wi-Fi, VPN) отдаёт пакеты рывками
+	jbGrow    = 3                // +60 мс после каждого провала
 	jbGap     = 250 * time.Millisecond
 )
+
+// jbLearned — до какого запаса дорос прошлый звонок: сеть у колонки обычно та же, и учиться заново
+// на каждом разговоре (с заиканием в начале) незачем. Между звонками понемногу отпускаем.
+var jbLearned atomic.Int64
+
+func jbStartPreroll() int {
+	return max(jbPreroll, min(jbMaxPre, int(jbLearned.Load())-1))
+}
+
+// remember — запомнить запас на следующий звонок (вызывается в конце звонка).
+func (j *jitterBuf) remember() { jbLearned.Store(int64(j.preroll)) }
 
 type jitterBuf struct {
 	dec     *gopus.Decoder
@@ -172,7 +187,7 @@ type jitterBuf struct {
 }
 
 func newJitterBuf(dec *gopus.Decoder, out func([]int16)) *jitterBuf {
-	return &jitterBuf{dec: dec, held: map[uint16]*rtp.Packet{}, out: out, preroll: jbPreroll, now: time.Now}
+	return &jitterBuf{dec: dec, held: map[uint16]*rtp.Packet{}, out: out, preroll: jbStartPreroll(), now: time.Now}
 }
 
 // push — пришёл пакет: декодируем по порядку, дырки закрываем FEC/PLC.
@@ -249,7 +264,7 @@ func (j *jitterBuf) emit(pcm []int16) {
 		} else if late := float64(now.Sub(j.playT).Milliseconds()) - j.playMs; late > 30 {
 			j.under++
 			j.underMs += late
-			j.preroll = min(jbMaxPre, j.preroll+2)
+			j.preroll = min(jbMaxPre, j.preroll+jbGrow)
 			j.spurt = [][]int16{}
 		}
 	}
@@ -282,5 +297,14 @@ func (j *jitterBuf) send(pcm []int16) {
 func (j *jitterBuf) flush() {
 	if j.spurt != nil {
 		j.release(j.now())
+	}
+}
+
+// idle — пакетов давно нет. Короткую фразу, которая кончилась раньше, чем набрался запас, отдаём —
+// но только если тишина дольше самого запаса: иначе это задержка сети посреди начала фразы, и отданный
+// раньше времени неполный запас сразу кончится провалом.
+func (j *jitterBuf) idle(since time.Duration) {
+	if since > time.Duration(j.preroll*20+60)*time.Millisecond {
+		j.flush()
 	}
 }

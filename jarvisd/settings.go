@@ -107,6 +107,9 @@ type Settings struct {
 
 	DevMode bool `json:"dev_mode"` // режим разработчика: страница «Обучение» и запись фона
 
+	Onboarded     bool `json:"onboarded"`      // мастер знакомства пройден или пропущен
+	PluginsWarned bool `json:"plugins_warned"` // предупреждение о неофициальных плагинах: «больше не показывать»
+
 	Language string `json:"language"` // на каком языке говорит хозяин: ru | en | uk | "" — определять самому
 
 	SpotifyLiked string        `json:"spotify_liked,omitempty"` // адрес плейлиста «Любимые треки» в Spotify, узнаётся сам

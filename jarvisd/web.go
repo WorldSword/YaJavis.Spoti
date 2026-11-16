@@ -108,6 +108,7 @@ func (w *Web) Serve(addr string) error {
 	mux.HandleFunc("DELETE /api/chatgpt", w.auth(w.chatgptLogout))
 	mux.HandleFunc("POST /api/chatgpt/newchat", w.auth(w.chatgptNewChat))
 	mux.HandleFunc("POST /api/memory/compact", w.auth(w.memoryCompact))
+	w.pluginRoutes(mux)
 	mux.HandleFunc("PUT /api/vless", w.auth(w.putVless))
 	mux.HandleFunc("PUT /api/youtube", w.auth(w.putYouTube))
 	mux.HandleFunc("PUT /api/spotify", w.auth(w.putSpotify))
@@ -415,7 +416,8 @@ func (w *Web) state(rw http.ResponseWriter, r *http.Request) {
 		"settings": map[string]any{"wake_enabled": s.WakeEnabled, "wake_sensitivity": s.WakeSensitivity, "mic_boost_db": s.MicBoostDB, "mic_gain_db": s.MicGainDB, "wake_check": s.WakeCheck,
 			"follow_up_s": s.FollowUpS, "city": s.City, "timezone": s.Timezone, "volume": s.Volume, "lan_only": s.LANOnly, "home_via": s.HomeVia, "home_use": s.HomeUseState(), "speaker_room": s.SpeakerRoom,
 			"led": s.Led, "train_mode": s.TrainMode, "train_limit_mb": s.TrainLimitMB, "dev_mode": s.DevMode, "language": s.Language,
-			"night": night, "night_now": s.IsNight(), "radio": !s.RadioOff},
+			"night": night, "night_now": s.IsNight(), "radio": !s.RadioOff, "onboarded": s.Onboarded, "plugins_warned": s.PluginsWarned},
+		"plugins": pluginSummary(), "repo": defaultRepo,
 		"security": securityChecks(),
 	})
 }

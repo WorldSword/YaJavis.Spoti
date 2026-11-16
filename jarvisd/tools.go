@@ -397,6 +397,7 @@ func (t *Tools) Definitions() []any {
 	if t.MemoryEdit != nil && chatgptChat.Enabled() {
 		defs = append(defs, memoryEditDefinition())
 	}
+	defs = append(defs, pluginHost.Tools()...)
 	if t.token() == "" || !t.use("yandex") || !t.hasCatalog() {
 		return defs // список устройств Яндекса не загрузился — без него модель зовёт инструмент вслепую; пусть передаёт Алисе
 	}
@@ -589,6 +590,10 @@ func (t *Tools) Call(ctx context.Context, name, args string) string {
 		return "Передал Алисе: «" + cmd + "». Она выполняет — скажи коротко, что сделано."
 	}
 	if name != "smart_home" {
+		if res, ok := pluginHost.CallTool(ctx, name, args); ok {
+			log.Printf("инструмент плагина %s → %s", name, clip(res, 200))
+			return res
+		}
 		return "Нет такого инструмента."
 	}
 	var a homeArgs
@@ -603,7 +608,8 @@ var catalogErrAt time.Time // когда последний раз писали 
 func aliceDefinition() any {
 	return map[string]any{"type": "function", "name": "alice_command",
 		"description": "Передать команду штатной Алисе на этой колонке — она выполнит всё, что подключено к Яндексу: свет, шторы, розетки, " +
-			"сценарии, таймеры, будильники, напоминания. Пиши команду коротко, как её сказали бы Алисе: «закрой шторы», «поставь таймер на 10 минут».",
+			"сценарии, таймеры, будильники, напоминания. Таймеры, будильники и напоминания на этой колонке ставятся только так — " +
+			"никогда не отвечай, что не умеешь их ставить. Пиши команду коротко, как её сказали бы Алисе: «закрой шторы», «поставь таймер на 10 минут».",
 		"parameters": map[string]any{"type": "object", "properties": map[string]any{
 			"command": map[string]any{"type": "string", "description": "команда для Алисы, без её имени"}},
 			"required": []any{"command"}}}

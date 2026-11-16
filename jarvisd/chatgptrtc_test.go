@@ -63,16 +63,16 @@ func TestJitterBufUnderrunGrowsPreroll(t *testing.T) {
 	}
 	clock = clock.Add(200 * time.Millisecond) // пакеты задержались, запас 80 мс кончился
 	jb.emit(frame)
-	if jb.under != 1 || jb.preroll != jbPreroll+2 {
+	if jb.under != 1 || jb.preroll != jbPreroll+jbGrow {
 		t.Fatalf("после рывка: провалов %d, запас %d", jb.under, jb.preroll)
 	}
 	if got != 10 {
 		t.Fatalf("после провала звук должен снова копиться, а ушло %d", got)
 	}
-	for i := 0; i < jbPreroll+1; i++ {
+	for i := 0; i < jbPreroll+jbGrow-1; i++ {
 		jb.emit(frame)
 	}
-	if got != 10+jbPreroll+2 {
+	if got != 10+jbPreroll+jbGrow {
 		t.Fatalf("после запаса отдано %d", got)
 	}
 }

@@ -1,0 +1,14 @@
+{
+  "id": "dice",
+  "name": "Монетка и кубик",
+  "version": "1.0.0",
+  "description": "Подбросить монетку, бросить кубик, выбрать случайное число. Заодно самый простой пример плагина.",
+  "author": "YaJarvis",
+  "homepage": "https://github.com/newfpv/YaJavis/tree/main/plugins/dice",
+  "kind": "js",
+  "main": "main.js",
+  "api": 1,
+  "category": "fun",
+  "icon": "puzzle",
+  "provides": ["tools", "commands"]
+}

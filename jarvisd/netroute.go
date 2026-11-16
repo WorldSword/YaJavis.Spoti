@@ -30,6 +30,7 @@ var netServices = []netService{
 	{"smartlife", "Smart Life", false},
 	{"gdrive", "Google Диск", false},
 	{"yandex", "Яндекс", false},
+	{"plugins", "Плагины", false},
 }
 
 // UseVPN — ходит ли подключение через VPN (если VPN вообще задан).

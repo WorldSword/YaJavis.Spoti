@@ -1,0 +1,17 @@
+{
+  "id": "currency",
+  "name": "Курсы валют",
+  "version": "1.0.0",
+  "description": "Официальные курсы ЦБ РФ или Нацбанка Беларуси. «Джарвис, курс доллара», «сколько 100 евро».",
+  "author": "YaJarvis",
+  "homepage": "https://github.com/newfpv/YaJavis/tree/main/plugins/currency",
+  "kind": "js",
+  "main": "main.js",
+  "api": 1,
+  "category": "info",
+  "icon": "bolt",
+  "provides": ["tools", "commands"],
+  "settings": [
+    {"key": "bank", "label": "Чей курс", "type": "select", "options": ["ЦБ РФ", "НБ РБ"], "default": "ЦБ РФ"}
+  ]
+}

@@ -2,7 +2,7 @@
 # Public release build. Never reads local settings or .env files.
 set -eu
 cd "$(dirname "$0")"
-VERSION=${VERSION:-0.9.67}
+VERSION=${VERSION:-0.9.68}
 VERSION=${VERSION#v}
 REPO=${REPO:-newfpv/YaJavis}
 GO=${GO:-go}
@@ -36,5 +36,6 @@ if [ "${RELEASE:-0}" = 1 ]; then
     sed "s#__REPO__#$REPO#g" installer/install.sh | tr -d '\r' > "$R/install.sh"
     sed "s#__REPO__#$REPO#g" installer/install.ps1 | tr -d '\r' > "$R/install.ps1"
     tar -czf "$R/THIRD_PARTY_NOTICES.tar.gz" LICENSE LICENSES THIRD_PARTY.md CREDITS.md
-    (cd "$R" && sha256sum JarvisSetup-* jarvisd-* install.* THIRD_PARTY_NOTICES.tar.gz > SHA256SUMS)
+    "$GO" run scripts/pack-plugins.go "$R"   # официальные плагины: plugin-<id>.zip
+    (cd "$R" && sha256sum JarvisSetup-* jarvisd-* install.* plugin-*.zip THIRD_PARTY_NOTICES.tar.gz > SHA256SUMS)
 fi

@@ -53,6 +53,10 @@ type Updater struct {
 	checked time.Time
 	err     string
 	busy    string // что делаем сейчас
+
+	// prepare — перед заменой ядра поставить плагины, нужные новой версии (EnsureFor). Ошибка — обновление
+	// откладывается: колонка остаётся на рабочей версии, а не просыпается без нужной функции.
+	prepare func(ctx context.Context, tag string) error
 }
 
 func assetName() string {
@@ -201,6 +205,11 @@ func (u *Updater) InstallLatest(ctx context.Context) error {
 		return errors.New("обновление уже идёт")
 	}
 	defer u.setBusy("")
+	if u.prepare != nil {
+		if err := u.prepare(ctx, latest); err != nil {
+			return fmt.Errorf("обновление отложено: %w", err)
+		}
+	}
 	resp, err := u.get(ctx, asset)
 	if err != nil {
 		return err

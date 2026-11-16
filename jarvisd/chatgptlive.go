@@ -397,6 +397,7 @@ func (s *ChatGPTSession) play(tr *webrtc.TrackRemote) {
 		log.Printf("GPT-Live (подписка): декодер: %v", err)
 		return
 	}
+	dropped := 0
 	jb := newJitterBuf(dec, func(pcm []int16) {
 		s.level.add(pcm, chatgptRate)
 		if loud(pcm) {
@@ -406,9 +407,14 @@ func (s *ChatGPTSession) play(tr *webrtc.TrackRemote) {
 		select {
 		case s.Out <- pcm:
 		default:
+			dropped++
 		}
 	})
 	defer func() {
+		jb.remember()
+		if dropped > 0 {
+			log.Printf("GPT-Live (подписка): плеер не успевал забирать голос — выброшено %d кусков", dropped)
+		}
 		if jb.lost > 0 {
 			log.Printf("GPT-Live (подписка): потерянных пакетов голоса за звонок — %d, закрыты восстановлением", jb.lost)
 		}
@@ -417,13 +423,14 @@ func (s *ChatGPTSession) play(tr *webrtc.TrackRemote) {
 				jb.under, jb.underMs, jb.preroll*20)
 		}
 	}()
+	lastPkt := time.Now()
 	for {
-		_ = tr.SetReadDeadline(time.Now().Add(120 * time.Millisecond))
+		_ = tr.SetReadDeadline(time.Now().Add(60 * time.Millisecond))
 		pkt, _, err := tr.ReadRTP()
 		if err != nil {
 			var ne net.Error
 			if (errors.As(err, &ne) && ne.Timeout()) || errors.Is(err, os.ErrDeadlineExceeded) {
-				jb.flush() // фраза кончилась раньше, чем набрался запас, — отдать, что есть
+				jb.idle(time.Since(lastPkt)) // фраза кончилась раньше, чем набрался запас, — отдать, что есть
 				if s.ctx.Err() != nil {
 					return
 				}
@@ -432,6 +439,7 @@ func (s *ChatGPTSession) play(tr *webrtc.TrackRemote) {
 			jb.flush()
 			return
 		}
+		lastPkt = time.Now()
 		jb.push(pkt)
 	}
 }
