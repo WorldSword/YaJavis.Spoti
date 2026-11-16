@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +32,6 @@ type soloistInstallOpts struct{ APIKey, DeviceName, ClientID, ClientSecret strin
 
 type SoloistInstaller struct {
 	api    string
-	arch   string
 	tmp    string
 	get    func(ctx context.Context, url string) (*http.Response, error)
 	run    spotifyExec
@@ -50,7 +48,7 @@ func newSoloistInstaller(run spotifyExec) *SoloistInstaller {
 	if st, err := os.Stat(tmp); err != nil || !st.IsDir() {
 		tmp = os.TempDir()
 	}
-	return &SoloistInstaller{api: soloistRepoAPI, arch: runtime.GOARCH, tmp: tmp, run: run,
+	return &SoloistInstaller{api: soloistRepoAPI, tmp: tmp, run: run,
 		get: func(ctx context.Context, url string) (*http.Response, error) {
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			req.Header.Set("User-Agent", "jarvisd/"+version)
@@ -93,9 +91,6 @@ func (i *SoloistInstaller) Start(o soloistInstallOpts) error {
 		if !validSoloistValue(v) {
 			return errors.New("недопустимые символы в настройках")
 		}
-	}
-	if i.arch != "arm64" {
-		return errors.New("Soloist ставится только на колонку с aarch64 (arm64), здесь " + i.arch)
 	}
 	i.mu.Lock()
 	if i.state == "running" {

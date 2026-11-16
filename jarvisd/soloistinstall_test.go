@@ -112,11 +112,10 @@ func releaseServer(t *testing.T, archive []byte, digest string) *httptest.Server
 	return srv
 }
 
-func testInstaller(t *testing.T, srv *httptest.Server, arch string, run spotifyExec) *SoloistInstaller {
+func testInstaller(t *testing.T, srv *httptest.Server, _ string, run spotifyExec) *SoloistInstaller {
 	t.Helper()
 	i := newSoloistInstaller(run)
 	i.api = srv.URL + "/repos/Horohi/soloist-station-lite/releases/latest"
-	i.arch = arch
 	i.tmp = t.TempDir()
 	i.get = func(ctx context.Context, url string) (*http.Response, error) { return srv.Client().Get(url) }
 	return i
@@ -192,14 +191,6 @@ func TestSoloistInstallBadDigest(t *testing.T) {
 	s := waitInstall(t, i)
 	if s["state"] != "error" || !strings.Contains(s["error"].(string), "SHA-256") || ran {
 		t.Errorf("ждали ошибку SHA-256 без запуска install.sh: %v ran=%v", s, ran)
-	}
-}
-
-func TestSoloistInstallRefusesWrongArch(t *testing.T) {
-	srv := releaseServer(t, goodArchive(t), "")
-	i := testInstaller(t, srv, "arm", fakeSpotifyExec(&[]spotifyCall{}))
-	if err := i.Start(soloistInstallOpts{APIKey: "spak_abc"}); err == nil || !strings.Contains(err.Error(), "aarch64") {
-		t.Errorf("ждали отказ из-за архитектуры, получили %v", err)
 	}
 }
 
