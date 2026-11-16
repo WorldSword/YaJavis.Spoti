@@ -661,7 +661,7 @@ function connDefs() {
       drop: ya.signed_in ? `<button class="btn ghost danger" id="ya-out">Выйти</button>` : yt.set ? `<button class="btn ghost danger" id="yt-clear">Убрать куки</button>` : "" },
     { id: "spotify", group: "home", mono: "Sp", name: "Spotify", about: "Музыка голосом: «Джарвис, включи … в Spotify». Играет Soloist — его ставите вы сами, Джарвис только передаёт запрос",
       more: "Нужен Spotify Premium и установленный Soloist (Spotify Connect на колонке).",
-      on: !!sp.installed, need: !sp.installed, wait: sp.installed ? !sp.running : sp.install?.state === "running",
+      on: !!sp.installed, need: !sp.installed, wait: !sp.installed && sp.install?.state === "running",
       state: !sp.installed ? (sp.install?.state === "running" ? "ставлю…" : "Soloist не найден") : sp.playing ? "играет" : sp.running ? "готов" : "Soloist не отвечает",
       body: !sp.installed ? (sp.install?.state === "running"
           ? `<p class="note">Ставлю Soloist: ${esc(sp.install.step || "…")}. Это займёт пару минут; Джарвис перезапустится сам.</p>`
@@ -758,6 +758,7 @@ function connBody(c) {
   // поля, которые человек уже начал заполнять, перерисовка не стирает
   const keep = {};
   card.querySelectorAll("input, textarea").forEach((el) => { if (el.id && el.value) keep[el.id] = el.value; });
+  const fa = document.activeElement, focus = fa && card.contains(fa) && fa.id ? { id: fa.id, a: fa.selectionStart, b: fa.selectionEnd } : null;
   const net = CONN.net[c.id];
   card.innerHTML = `<div class="cn-mh"><span class="char-av cn-av">${c.icon ? icon(c.icon) : esc(c.mono)}</span>
       <div class="char-n"><h2 id="cn-mt">${esc(c.name)}</h2><span class="st ${c.bad ? "bad" : c.on ? "ok" : c.need ? "warn" : ""}">${c.state}${net?.ok ? ` · ${net.ms} мс` : ""}</span></div>
@@ -766,6 +767,8 @@ function connBody(c) {
     <div class="cn-body">${c.body}</div>
     ${c.drop ? `<div class="row cn-foot"><span class="spacer"></span>${c.drop}</div>` : ""}`;
   for (const [id, val] of Object.entries(keep)) { const el = card.querySelector("#" + id); if (el) el.value = val; }
+  // перерисовка по таймеру не должна выбивать человека из поля, где он печатает
+  if (focus) { const el = card.querySelector("#" + focus.id); if (el) { el.focus(); try { el.setSelectionRange(focus.a, focus.b); } catch (e) { /* у password/number выделения нет */ } } }
 }
 
 function connOpen(id) {
