@@ -43,7 +43,6 @@ type Spotify struct {
 	last    SpotifyNow // последний удачный ответ Soloist
 	next    []Track    // следующие треки очереди Spotify
 	volSeen int        // последняя громкость Spotify плюс 1; 0 — ещё не знаем
-	skipped string     // голос DJ, который уже пропустили
 	nextFor string     // для какого трека снята очередь
 	liked   string     // адрес плейлиста «Любимые треки»
 	lastAt  time.Time
@@ -315,6 +314,9 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 	}
 	if now.Title == "" && now.URI != "" {
 		now.Title = "Spotify"
+		if isDJVoice(now.URI) {
+			now.Title = "DJ"
+		}
 	}
 	names := make([]string, 0, len(d.Creators))
 	for _, c := range d.Creators {
@@ -392,9 +394,6 @@ func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
 	s.mu.Unlock()
 	if changed {
 		s.applyVolume(ctx, vol)
-	}
-	if isDJVoice(now.URI) {
-		s.skipDJVoice(ctx, now.URI)
 	}
 	if learn != "" && s.OnLearnLiked != nil {
 		s.OnLearnLiked(learn)
@@ -663,27 +662,6 @@ func (s *Spotify) applyVolume(ctx context.Context, v int) {
 	}
 }
 
-// isDJVoice — «вставка» DJ X (Up next, Далее): spotify:media:…, это озвучка, а не трек.
+// isDJVoice — «вставка» DJ X (Up next, Далее): spotify:media:…, это озвучка, а не трек. Она играет как обычно,
+// но в списке очереди её не показываем.
 func isDJVoice(uri string) bool { return strings.HasPrefix(uri, "spotify:media:") }
-
-// skipDJVoice пропускает голос DJ X: Soloist его проиграть не умеет, и приложение на телефоне зависает,
-// пока ждёт конца вставки. Одну и ту же вставку пропускаем один раз; пользовательской командой это не считается.
-func (s *Spotify) skipDJVoice(ctx context.Context, uri string) {
-	s.mu.Lock()
-	done := s.skipped == uri
-	s.skipped = uri
-	s.mu.Unlock()
-	if done {
-		return
-	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if out, err := s.ctl(ctx, "next"); err != nil {
-		log.Printf("spotify: не удалось пропустить голос DJ: %v %s", err, strings.TrimSpace(string(out)))
-		s.mu.Lock()
-		s.skipped = "" // попробуем при следующем опросе
-		s.mu.Unlock()
-		return
-	}
-	log.Printf("spotify: пропустил голосовую вставку DJ")
-}

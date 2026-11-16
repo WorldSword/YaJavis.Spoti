@@ -285,40 +285,23 @@ func TestSpotifyVolumeFollowsApp(t *testing.T) {
 	}
 }
 
-// Голос DJ X Soloist проиграть не умеет, и приложение на телефоне зависает в ожидании: пропускаем вставку сами.
-func TestSkipsDJVoiceSegment(t *testing.T) {
-	voice := strings.Replace(string(fixture(t, "soloist_now_dj.json")), "spotify:track:68lbSrXDORS51pmyjZv712", "spotify:media:5rELQYNJgj4btlKsA47hiR", 1)
+// Голос DJ играет как обычно: Джарвис его не трогает, а в панели вместо пустого названия пишет «DJ».
+func TestDJVoiceIsLeftAlone(t *testing.T) {
+	voice := strings.Replace(string(fixture(t, "soloist_now_dj.json")), `"identity":{"name":"SWIM"}`, `"identity":{"name":""}`, 1)
+	voice = strings.Replace(voice, "spotify:track:68lbSrXDORS51pmyjZv712", "spotify:media:5rELQYNJgj4btlKsA47hiR", 1)
 	r := &recExec{now: []byte(voice)}
 	sp := newQueueSpotify(t, r)
-	nexts := func() int {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		n := 0
-		for _, c := range r.calls {
-			if len(c) > 0 && c[len(c)-1] == "next" {
-				n++
-			}
-		}
-		return n
-	}
-	for i := 0; i < 3; i++ { // тот же сегмент при нескольких опросах пропускаем один раз
+	for i := 0; i < 3; i++ {
 		if _, err := sp.Now(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n := nexts(); n != 1 {
-		t.Errorf("команд next: %d, ждали 1", n)
-	}
-	if sp.CmdSeq() != 0 {
-		t.Errorf("автопропуск не должен считаться командой пользователя: %d", sp.CmdSeq())
-	}
-	// обычный трек не пропускаем
-	r2 := &recExec{now: fixture(t, "soloist_now_dj.json")}
-	sp2 := newQueueSpotify(t, r2)
-	sp2.Now(context.Background())
-	for _, c := range r2.calls {
+	for _, c := range r.calls {
 		if c[len(c)-1] == "next" {
-			t.Errorf("обычный трек пропущен: %v", c)
+			t.Errorf("голос DJ не пропускаем: %v", c)
 		}
+	}
+	if got := sp.Snapshot().Track.Title; got != "DJ" {
+		t.Errorf("название вставки: %q", got)
 	}
 }
