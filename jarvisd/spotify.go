@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,7 +31,8 @@ type Spotify struct {
 	clock  func() time.Time
 	poll   time.Duration // как часто Run спрашивает Soloist, что играет
 	inst   *soloist.Installer
-	OnPlay func() // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
+	cmds   atomic.Uint64 // сколько команд ушло в Soloist; по нему видно, вмешался ли кто-то
+	OnPlay func()        // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
 
 	mu     sync.Mutex
 	last   SpotifyNow // последний удачный ответ Soloist
@@ -95,6 +97,14 @@ func (s *Spotify) Installer() *soloist.Installer {
 	return s.inst
 }
 
+// CmdSeq — число отправленных в Soloist команд.
+func (s *Spotify) CmdSeq() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.cmds.Load()
+}
+
 func (s *Spotify) Installed() bool { return s != nil && s.root != "" }
 func (s *Spotify) Root() string {
 	if s == nil {
@@ -107,6 +117,7 @@ func (s *Spotify) control(ctx context.Context, args ...string) error {
 	if !s.Installed() {
 		return errors.New("Soloist не найден на колонке")
 	}
+	s.cmds.Add(1)
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
 	out, err := s.exec(ctx, "sh", append([]string{path.Join(s.root, "scripts", "control.sh")}, args...)...)

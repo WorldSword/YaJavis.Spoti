@@ -24,6 +24,7 @@ type WakeDetector interface {
 }
 
 type Engine struct {
+	vg       voiceGate  // Spotify на паузе, пока говорит Джарвис
 	micLevel levelMeter // голос в микрофоне за разговор (до усиления) — в журнал: видно, что модель слышит тихо
 	store    *Store
 	proxy    *Proxy

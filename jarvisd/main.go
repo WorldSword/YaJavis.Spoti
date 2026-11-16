@@ -575,6 +575,7 @@ func main() {
 			drive: &GDrive{store: store, client: func() *http.Client { return proxy.ClientFor("gdrive", 0) }}}}
 	engine.stt = NewSTT(func() string { return store.Get().OpenAIKey }, func() *http.Client { return proxy.ClientFor("openai", 0) })
 	engine.cmds = NewCmdSpotter(*dataDir, engine.onCommand)
+	player.OnStart, player.OnExit = engine.spotifyVoiceStart, engine.spotifyVoiceEnd // Spotify молчит, пока говорит Джарвис
 	voiceTestHook = engine.VoiceTest
 	chatgptChat.SetSummarizer(engine.summarize)
 	engine.train.cloud = engine.bg.drive // старые записи для обучения — на тот же Google Диск, что и фон

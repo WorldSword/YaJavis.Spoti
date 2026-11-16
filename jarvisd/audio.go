@@ -143,6 +143,9 @@ type Player struct {
 	up     *upsampler // 16/24 кГц → 48 кГц своим фильтром, а не линейным пересчётом ALSA
 	boost  float64    // доп. усиление голоса конкретного движка (ChatGPT по подписке приходит тише)
 	aplay  string
+
+	OnStart func() // перед запуском aplay (может ждать); к каждому OnStart придёт ровно один OnExit
+	OnExit  func() // aplay завершился или не запустился
 }
 
 func NewPlayer() *Player {
@@ -162,6 +165,17 @@ func (p *Player) Playing() bool {
 // Start открывает плеер; rate — частота PCM (моно s16le).
 func (p *Player) Start(rate int) error {
 	p.Stop(true)
+	if p.OnStart != nil {
+		p.OnStart()
+	}
+	err := p.start(rate)
+	if err != nil && p.OnExit != nil {
+		p.OnExit()
+	}
+	return err
+}
+
+func (p *Player) start(rate int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var up *upsampler
@@ -183,7 +197,14 @@ func (p *Player) Start(rate int) error {
 	p.done = make(chan struct{})
 	p.exited = make(chan struct{})
 	exited := p.exited
-	go func() { _ = cmd.Wait(); close(exited) }()
+	onExit := p.OnExit
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+		if onExit != nil {
+			onExit()
+		}
+	}()
 	go p.pump(in, p.queue, p.done)
 	return nil
 }
