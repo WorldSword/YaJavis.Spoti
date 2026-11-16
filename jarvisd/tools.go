@@ -35,6 +35,10 @@ type Tools struct {
 	SpotifyPlay func(ctx context.Context, query string) string
 	// MusicQueue — добавить в очередь YouTube (если ничего не играет — включить)
 	MusicQueue func(ctx context.Context, query string) string
+	// Recall — поиск по архиву прошлых разговоров («вспомни, что ты советовал про…»); nil — нет памяти
+	Recall func(query, date string) string
+	// MemoryEdit — «забудь / запомни / исправь» в долгой памяти
+	MemoryEdit func(forget, remember string, words []string) string
 	token      func() string
 	now        func() time.Time
 	client     *http.Client
@@ -387,6 +391,12 @@ func (t *Tools) Definitions() []any {
 	if t.use("alice") {
 		defs = append(defs, aliceDefinition())
 	}
+	if t.Recall != nil && chatgptChat.Enabled() {
+		defs = append(defs, recallDefinition())
+	}
+	if t.MemoryEdit != nil && chatgptChat.Enabled() {
+		defs = append(defs, memoryEditDefinition())
+	}
 	if t.token() == "" || !t.use("yandex") || !t.hasCatalog() {
 		return defs // список устройств Яндекса не загрузился — без него модель зовёт инструмент вслепую; пусть передаёт Алисе
 	}
@@ -549,6 +559,22 @@ func (t *Tools) Call(ctx context.Context, name, args string) string {
 			return "Не понял команду для музыки."
 		}
 		return t.MusicCtl(ctx, a.Command)
+	}
+	if name == "recall_conversation" && t.Recall != nil {
+		var a struct{ Query, Date string }
+		_ = json.Unmarshal([]byte(args), &a)
+		if strings.TrimSpace(a.Query) == "" && strings.TrimSpace(a.Date) == "" {
+			return "Скажи, что вспомнить: ключевые слова или день."
+		}
+		return t.Recall(a.Query, a.Date)
+	}
+	if name == "edit_memory" && t.MemoryEdit != nil {
+		var a struct {
+			Forget, Remember string
+			Words            []string
+		}
+		_ = json.Unmarshal([]byte(args), &a)
+		return t.MemoryEdit(a.Forget, a.Remember, a.Words)
 	}
 	if name == "alice_command" && t.use("alice") {
 		var a struct{ Command string }

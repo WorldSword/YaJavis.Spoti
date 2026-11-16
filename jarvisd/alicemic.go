@@ -18,9 +18,10 @@ import (
 const (
 	aliceLaunch      = "/system/vendor/quasar/launch.json"
 	aliceRestartMark = "/tmp/jarvisd/alice-mic-restarted" // /tmp в памяти: не больше одного раза за загрузку
+	aliceRunScript   = "/system/vendor/quasar/run.sh"
 	// pkill в прошивке нет (даже штатный «S99quasar stop» на нём спотыкается) — killall есть
 	aliceRestartShell = "killall quasar_launcher2; i=0; while pidof maind >/dev/null && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done; " +
-		"killall -9 maind 2>/dev/null; sleep 1; start-stop-daemon -S -b -x /system/vendor/quasar/run.sh"
+		"killall -9 maind 2>/dev/null; sleep 1; start-stop-daemon -S -b -x " + aliceRunScript
 )
 
 // aliceMissesTap — профиль с vqe_tap.so подложен, Алиса (maind --platformd) работает, но библиотеки в ней нет:
@@ -53,17 +54,27 @@ func platformdMaps() []string {
 	return out
 }
 
-func WatchAliceMic(mic *Mic) {
+func WatchAliceMic(mic *Mic, dataDir string) {
 	time.Sleep(25 * time.Second) // Алиса и tap успевают подняться после загрузки
 	if mic.Online() {
 		return
 	}
+	defer func() { // так и не заработал — разобрать, на каком шаге оборвалось (журнал и панель)
+		if !mic.Online() {
+			logMicDiagnosis(mic, dataDir)
+		}
+	}()
 	mounts, _ := os.ReadFile("/proc/mounts")
 	if !aliceMissesTap(string(mounts), platformdMaps()) {
+		time.Sleep(20 * time.Second) // дать шумодаву время на первые кадры
 		return
 	}
 	if _, err := os.Stat(aliceRestartMark); err == nil {
 		log.Printf("микрофон: Алиса снова без vqe_tap.so — второй раз не перезапускаю, нужна перезагрузка колонки")
+		return
+	}
+	if _, err := os.Stat(aliceRunScript); err != nil { // другая прошивка: без скрипта запуска Алису не поднять обратно
+		log.Printf("микрофон: Алиса запустилась раньше Джарвиса, а %s нет — перезапускать не рискую, перезагрузите колонку", aliceRunScript)
 		return
 	}
 	_ = os.WriteFile(aliceRestartMark, []byte(time.Now().Format(time.RFC3339)), 0o644)

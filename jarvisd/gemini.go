@@ -131,7 +131,26 @@ func geminiRestUntil(prev any, now time.Time) time.Time {
 func markGeminiSpent(key, model string) {
 	k := geminiSpentKey(key, model)
 	prev, _ := geminiSpent.Load(k)
-	geminiSpent.Store(k, geminiRestUntil(prev, time.Now()))
+	markGeminiUntil(k, geminiRestUntil(prev, time.Now()))
+}
+
+// geminiGoneRest — сколько не пробовать модель, которой у ключа нет (сняли или закрыли для новых аккаунтов).
+const geminiGoneRest = 7 * 24 * time.Hour
+
+func markGeminiGone(key, model string) {
+	markGeminiUntil(geminiSpentKey(key, model), time.Now().Add(geminiGoneRest))
+}
+
+// geminiGoneErr — Google не даёт эту модель ключу: «no longer available to new users», 404, «not found».
+// Это не поломка ключа — берём следующую модель.
+func geminiGoneErr(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "ответил 404") || strings.Contains(m, "no longer available") ||
+		strings.Contains(m, "is not found for api") || strings.Contains(m, "is not supported for")
+}
+
+func markGeminiUntil(k string, until time.Time) {
+	geminiSpent.Store(k, until)
 	if geminiSpentPath == "" {
 		return
 	}
@@ -196,6 +215,10 @@ func geminiCandidates(keys []string, chosen string) []geminiTry {
 }
 
 // geminiQuotaText — понятное объяснение вместо «You exceeded your current quota».
+func geminiGoneText(msg string) string {
+	return "Google не даёт этому ключу ни одной из моделей Gemini — обновите Джарвиса или создайте ключ в другом проекте AI Studio. Ответ Google: " + msg
+}
+
 func geminiQuotaText(msg string) string {
 	return "у ключей Gemini кончился бесплатный лимит на все модели — добавьте ещё ключ в «Подключениях», подождите до завтра (лимит обновляется около 10–11 утра по Москве) " +
 		"или включите оплату в AI Studio (aistudio.google.com → Billing). Ответ Google: " + msg
@@ -475,7 +498,7 @@ func (s *GeminiSession) send(v any) error {
 func (s *GeminiSession) open() (*websocket.Conn, error) {
 	chosen := geminiModel(s.prof.LiveModel)
 	keys := geminiKeysFrom(s.key)
-	var lastQuota string
+	var lastQuota, lastGone string
 	cands := geminiCandidates(keys, chosen)
 	for len(cands) > 0 {
 		n := 1
@@ -498,6 +521,7 @@ func (s *GeminiSession) open() (*websocket.Conn, error) {
 		}
 		var win *result
 		var other error
+		gone := false
 		left := len(tier)
 		for ; left > 0 && win == nil; left-- {
 			r := <-ch
@@ -508,6 +532,10 @@ func (s *GeminiSession) open() (*websocket.Conn, error) {
 				markGeminiSpent(r.c.key, r.c.model)
 				lastQuota = r.err.Error()
 				log.Printf("Gemini Live: у модели %s кончился лимит (ключ %d из %d)", r.c.model, slices.Index(keys, r.c.key)+1, len(keys))
+			case geminiGoneErr(r.err.Error()):
+				markGeminiGone(r.c.key, r.c.model)
+				gone, lastGone = true, r.err.Error()
+				log.Printf("Gemini Live: модель %s недоступна ключу %d из %d — беру следующую", r.c.model, slices.Index(keys, r.c.key)+1, len(keys))
 			default:
 				other = r.err
 			}
@@ -535,9 +563,12 @@ func (s *GeminiSession) open() (*websocket.Conn, error) {
 			}
 			return win.ws, nil
 		}
-		if other != nil && lastQuota == "" { // не лимит, а сеть или ключ — дальше по моделям идти бессмысленно
+		if other != nil && lastQuota == "" && !gone { // не лимит, а сеть или ключ — дальше по моделям идти бессмысленно
 			return nil, other
 		}
+	}
+	if lastQuota == "" && lastGone != "" {
+		return nil, errors.New(geminiGoneText(lastGone))
 	}
 	return nil, errors.New(geminiQuotaText(lastQuota))
 }
@@ -902,6 +933,11 @@ func (s *GeminiSession) Close() {
 
 // askGemini — текстовый вопрос модели Gemini (для сообщений из переписки, когда ключа OpenAI нет).
 func askGemini(ctx context.Context, client *http.Client, key, instructions, text string, webSearch bool) (string, error) {
+	return askGeminiModels(ctx, client, key, instructions, text, webSearch, geminiTextModels)
+}
+
+// askGeminiModels — то же, но только эти модели (по очереди, при лимите — следующая модель или ключ).
+func askGeminiModels(ctx context.Context, client *http.Client, key, instructions, text string, webSearch bool, models []string) (string, error) {
 	body := map[string]any{
 		"systemInstruction": map[string]any{"parts": []any{map[string]any{"text": instructions}}},
 		"contents":          []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": text}}}},
@@ -910,20 +946,31 @@ func askGemini(ctx context.Context, client *http.Client, key, instructions, text
 		body["tools"] = []any{map[string]any{"googleSearch": map[string]any{}}}
 	}
 	raw, _ := json.Marshal(body)
-	var lastErr error
-	for _, model := range geminiTextModels {
+	var lastErr, goneErr error
+	for _, model := range models {
 		for _, k := range geminiKeysFrom(key) {
 			if geminiIsSpent(k, model) {
 				continue
 			}
 			answer, err := askGeminiModel(ctx, client, k, model, raw)
-			if err == nil || !geminiQuotaErr(err.Error()) {
-				return answer, err
+			switch {
+			case err == nil:
+				return answer, nil
+			case geminiQuotaErr(err.Error()):
+				markGeminiSpent(k, model)
+				log.Printf("Gemini: у %s кончился лимит — пробую следующую модель или ключ", model)
+				lastErr = err
+			case geminiGoneErr(err.Error()):
+				markGeminiGone(k, model)
+				log.Printf("Gemini: модель %s недоступна ключу — пробую следующую (%s)", model, shortErr(err))
+				goneErr = err
+			default:
+				return "", err
 			}
-			markGeminiSpent(k, model)
-			log.Printf("Gemini: у %s кончился лимит — пробую следующую модель или ключ", model)
-			lastErr = err
 		}
+	}
+	if lastErr == nil && goneErr != nil {
+		return "", errors.New(geminiGoneText(goneErr.Error()))
 	}
 	if lastErr == nil {
 		lastErr = errors.New("лимит Gemini кончился")

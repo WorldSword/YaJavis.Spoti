@@ -85,20 +85,21 @@ type Settings struct {
 	Prompts    []Prompt      `json:"prompts"`
 	LiveVoices []CustomVoice `json:"live_voices"`
 
-	WakeEnabled     bool    `json:"wake_enabled"`
-	WakeCheck       bool    `json:"wake_check"`       // перед ответом проверять имя расшифровкой (медленнее; без неё — сразу, как Алиса)
-	WakeSensitivity int     `json:"wake_sensitivity"` // 1..10
-	MicBoostDB      int     `json:"mic_boost_db"`     // доп. усиление микрофона для ИИ, 0..18 дБ (на Лайт 2 голос после обработки тише)
-	MicGainDB       int     `json:"mic_gain_db"`      // общее усиление микрофона для всего (слово, ИИ, обучение), 0..30 дБ: на Мини 2 обработка Алисы отдаёт голос тихо
-	FollowUpS       float64 `json:"follow_up_s"`
-	City            string  `json:"city"`
-	Timezone        string  `json:"timezone"`     // например Europe/Moscow: часы колонки в UTC
-	PlaceMoved      bool    `json:"place_moved"`  // город и пояс перенесены из ассистентов в настройки колонки
-	SpeakerRoom     string  `json:"speaker_room"` // где стоит колонка: «свет», «кондиционер» без комнаты — здесь
-	Volume          int     `json:"volume"`       // громкость ответов Джарвиса, 0..100 (с шкалой 2: 50 — прежние 100)
-	VolScale        int     `json:"vol_scale"`    // 2 — громкость голоса в новой шкале: 100% вдвое громче прежнего максимума
-	LANOnly         bool    `json:"lan_only"`
-	HomeVia         string  `json:"home_via"` // кто выполняет короткие команды умного дома: alice | jarvis (старое, теперь HomeUse)
+	WakeEnabled     bool           `json:"wake_enabled"`
+	WakeCheck       bool           `json:"wake_check"`       // перед ответом проверять имя расшифровкой (медленнее; без неё — сразу, как Алиса)
+	WakeSensitivity int            `json:"wake_sensitivity"` // 1..10
+	MicBoostDB      int            `json:"mic_boost_db"`     // доп. усиление микрофона для ИИ, 0..18 дБ (на Лайт 2 голос после обработки тише)
+	MicGainDB       int            `json:"mic_gain_db"`      // общее усиление микрофона для всего (слово, ИИ, обучение), 0..30 дБ: на Мини 2 обработка Алисы отдаёт голос тихо
+	FollowUpS       float64        `json:"follow_up_s"`
+	Memory          MemorySettings `json:"memory"` // общая память разговоров (chatgptchat.go)
+	City            string         `json:"city"`
+	Timezone        string         `json:"timezone"`     // например Europe/Moscow: часы колонки в UTC
+	PlaceMoved      bool           `json:"place_moved"`  // город и пояс перенесены из ассистентов в настройки колонки
+	SpeakerRoom     string         `json:"speaker_room"` // где стоит колонка: «свет», «кондиционер» без комнаты — здесь
+	Volume          int            `json:"volume"`       // громкость ответов Джарвиса, 0..100 (с шкалой 2: 50 — прежние 100)
+	VolScale        int            `json:"vol_scale"`    // 2 — громкость голоса в новой шкале: 100% вдвое громче прежнего максимума
+	LANOnly         bool           `json:"lan_only"`
+	HomeVia         string         `json:"home_via"` // кто выполняет короткие команды умного дома: alice | jarvis (старое, теперь HomeUse)
 	// через что Джарвис управляет домом: alice, yandex, smartlife, xiaomi, homeassistant (нет записи — можно)
 	HomeUse map[string]bool `json:"home_use,omitempty"`
 

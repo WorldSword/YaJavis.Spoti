@@ -67,6 +67,7 @@ function toast(msg, bad = false) {
   toast.t = setTimeout(() => (t.className = "toast"), bad ? 4500 : 2200);
 }
 
+let previewSeq = 0;
 async function act(btn, fn, okMsg) {
   if (btn) btn.disabled = true;
   try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message, true); } finally { if (btn) btn.disabled = false; }
@@ -137,7 +138,7 @@ async function poll() {
   try { d = await api("GET", "/api/journal"); } catch { return; }
   if (d.version && S.version && d.version !== S.version) { location.reload(); return; }   // колонку обновили — берём новую панель
   journal = d.items || [];
-  S.speaker.mic = d.mic; S.speaker.talking = d.talking; S.speaker.phase = d.phase || ""; S.sys = d.sys || {};
+  S.speaker.mic = d.mic; S.speaker.mic_why = d.mic_why || ""; S.speaker.talking = d.talking; S.speaker.phase = d.phase || ""; S.sys = d.sys || {};
   renderStatus();
   if (d.volume >= 0) S.speaker.volume = d.volume;
   if (page === "home") { homeData(); drawVolume(); if (Date.now() - ST.at > 15000) statsData(); if (Date.now() - HL.at > 5000) homeLogs(); }
@@ -154,7 +155,7 @@ async function poll() {
 function speakerState() {
   const sp = S.speaker;
   if (sp.talking) return { ring: "talk", title: "Идёт разговор", text: "Говорите — пока разговор открыт, звать по имени не нужно" };
-  if (!sp.mic) return { ring: "off", title: "Микрофон не подключён", text: "Колонка не присылает звук. Проверьте, что она включена и установка завершилась." };
+  if (!sp.mic) return { ring: "off", title: "Микрофон не подключён", text: sp.mic_why ? `Колонка не присылает звук: ${sp.mic_why}. Подробности — в «Журнале».` : "Колонка не присылает звук. Проверьте, что она включена и установка завершилась." };
   if (sp.wake_model && S.settings.wake_enabled) return { ring: "idle", title: "Жду слово «Джарвис»", text: "Скажите «Джарвис, …» или нажмите «Поговорить»" };
   return { ring: "mute", title: "Жду кнопку «Поговорить»", text: S.settings.wake_enabled ? "Модель слова «Джарвис» ещё не установлена" : "Отклик на слово «Джарвис» выключен" };
 }
@@ -280,7 +281,7 @@ function viewHome() {
     <section class="card home-logs tight" id="hlogs"><div class="card-head"><h2>Логи</h2><a class="meta hl-all" href="#logs">Все логи ${icon("right")}</a></div><div class="logbox" id="hlogbox"></div></section>
   </aside>
   </div>`;
-  feedHtml = ""; feedSeen = 0;
+  feedReset($("#feed"));
   ST.at = 0; drawKpis(); statsData();
   playerSetup(); drawVolume(); if (M) drawPlayer(); musicData();
   homeLogsSetup();
@@ -306,7 +307,7 @@ function viewHome() {
     if (!text) return;
     say.value = ""; swap();
     try { await api("POST", "/api/say", { text, speak }); } catch (err) { toast(err.message, true); say.value = text; swap(); return; }
-    $("#feed").scrollTop = $("#feed").scrollHeight;
+    FEED.stick = true; feedFollow();
     poll(); setTimeout(poll, 700);
   });
   homeData();
@@ -319,7 +320,6 @@ const dayLabel = (d) => {
   const diff = Math.round((day(new Date()) - day(d)) / 864e5);
   return diff === 0 ? "Сегодня" : diff === 1 ? "Вчера" : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 };
-let feedHtml = "", feedSeen = 0;   // что уже нарисовано: не трогаем переписку, пока в ней ничего не изменилось
 
 function serviceText(it) {
   const base = SERVICE[it.route];
@@ -353,36 +353,26 @@ function homeData() {
 
   const items = journal.filter((it) => it.route !== "ложное срабатывание" || it.text).slice(0, 40).reverse();   // старые сверху
   const time = (ts) => new Date(ts * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  const build = (rich) => {
-  let day = "", html = "";
+  const rows = [];
+  let day = "";
   for (const it of items) {
-    const d = dayLabel(new Date(it.ts * 1000)), fresh = it.ts > feedSeen ? " new" : "";
-    if (d !== day) { day = d; html += `<div class="svc day">${d}</div>`; }
+    const d = dayLabel(new Date(it.ts * 1000));
+    if (d !== day) { day = d; rows.push({ key: "d:" + d, cls: "svc day", html: d }); }
     const service = SERVICE[it.route], tm = time(it.ts);
     const answered = !!(it.answer || it.error || service);
-    if (it.text) html += `<div class="b me${fresh}"><span class="t">${esc(it.text)}</span><span class="m">${tm}${icon(answered ? "read" : "sent")}</span></div>`;
-    if (service) html += `<div class="svc${fresh}">${esc(serviceText(it))}</div>`;
-    else if (it.answer) html += `<div class="b him${fresh}"${rich ? ` data-k="${it.ts}"` : ""}><span class="t">${rich ? answerHtml(it.ts, it.answer, feedHtml !== "") : esc(it.answer)}</span><span class="m">${typeof it.audio_s === "number" && it.audio_s > 0 ? `ответ через ${it.audio_s.toFixed(1)} с · ` : ""}${tm}</span></div>`;
-    if (it.error) html += `<div class="b him err${fresh}"><span class="t">${esc(it.error)}</span><span class="m">${tm}</span></div>`;
-    if (it.live && !answered) {
-      const ph = S.speaker.phase;
-      if (!it.text) html += `<div class="b me live${fresh}" aria-label="Говорите"><span class="wave">${"<i></i>".repeat(7)}</span><span class="t">Слушаю</span></div>`;
-      else if (ph === "speaking") html += `<div class="b him speak${fresh}" aria-label="Джарвис отвечает"><span class="eqw">${"<i></i>".repeat(5)}</span><span class="t">Отвечает</span></div>`;
-      else html += `<div class="b him think"${rich ? ` data-k="${it.ts}"` : ""} aria-label="Джарвис думает"><span class="think-t">Думаю</span></div>`;
+    if (it.text) rows.push({ key: "me:" + it.ts, cls: "b me", html: `<span class="t">${esc(it.text)}</span><span class="m">${tm}${icon(answered ? "read" : "sent")}</span>` });
+    else if (it.live && !answered) rows.push({ key: "me:" + it.ts, cls: "b me live", html: `<span class="wave">${"<i></i>".repeat(7)}</span><span class="t">Слушаю</span>`, label: "Говорите" });
+    if (service) rows.push({ key: "svc:" + it.ts, cls: "svc", html: esc(serviceText(it)) });
+    else if (it.answer) rows.push({ key: "him:" + it.ts, cls: "b him ans", answer: it.answer,
+      meta: `${typeof it.audio_s === "number" && it.audio_s > 0 ? `ответ через ${it.audio_s.toFixed(1)} с · ` : ""}${tm}` });
+    else if (it.live && !answered && it.text) {
+      if (S.speaker.phase === "speaking") rows.push({ key: "him:" + it.ts, cls: "b him speak", html: `<span class="eqw">${"<i></i>".repeat(5)}</span><span class="t">Отвечает</span>`, label: "Джарвис отвечает" });
+      else rows.push({ key: "him:" + it.ts, cls: "b him think", html: `<span class="think-t">Думаю</span>`, label: "Джарвис думает" });
     }
+    if (it.error) rows.push({ key: "err:" + it.ts, cls: "b him err", html: `<span class="t">${esc(it.error)}</span><span class="m">${tm}</span>` });
   }
-  return html;
-  };
-  let html = build(false);
-  if (!items.length) html = `<div class="tg-empty"><b>Здесь будет переписка</b><span>Скажите «Джарвис, какая погода?» — вопрос и ответ появятся тут</span></div>`;
-  if (html === feedHtml) return;
-  const first = feedHtml === "", pinned = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
-  const plain = html;
-  if (items.length) html = build(true);
-  feed.innerHTML = html; feedHtml = plain;
-  if (!first) streamBubbles(feed); else for (const b of feed.querySelectorAll(".b.him[data-k]")) bubbleSize[b.dataset.k] = { w: b.offsetWidth, h: b.offsetHeight };
-  if (items.length) feedSeen = Math.max(feedSeen, ...items.map((it) => it.ts));
-  if (first || pinned) feed.scrollTop = feed.scrollHeight;   // новое сообщение показываем, если человек не листал вверх
+  if (!rows.length) rows.push({ key: "empty", cls: "tg-empty", html: `<b>Здесь будет переписка</b><span>Скажите «Джарвис, какая погода?» — вопрос и ответ появятся тут</span>` });
+  feedSync(feed, rows);
 }
 
 // ---------------------------------------------------------------- ассистент
@@ -495,7 +485,14 @@ function viewProfile(id) {
   $("#p-engine").addEventListener("click", (e) => { const b = e.target.closest(".opt"); if (!b || b.dataset.engine === p.engine) return; p.engine = b.dataset.engine; drawEngine(); mark(); });
   $("#voices").addEventListener("click", async (e) => {
     const play = e.target.closest("[data-play]"), del = e.target.closest("[data-delv]"), card = e.target.closest(".voice");
-    if (play) { e.stopPropagation(); await act(play, async () => { const r = await api("POST", "/api/preview", { voice: play.dataset.play, engine: p.engine, tts_model:$("#p-tts-model").value }); toast(r.cached ? "Играет на колонке" : "Прозвучало на колонке и сохранено"); }); return; }
+    if (play) { // последнее нажатие побеждает: ответ прошлой пробы не перекрывает новую
+      e.stopPropagation(); const n = ++previewSeq; play.disabled = true;
+      try {
+        const r = await api("POST", "/api/preview", { voice: play.dataset.play, engine: p.engine, tts_model: $("#p-tts-model").value });
+        if (n === previewSeq && !r.interrupted) toast(r.cached ? "Играет на колонке" : "Прозвучало на колонке и сохранено");
+      } catch (err) { if (n === previewSeq) toast(err.message, true); } finally { play.disabled = false; }
+      return;
+    }
     if (del) { e.stopPropagation(); if (!confirm("Удалить этот голос из списка?")) return; await act(del, async () => { await api("DELETE", "/api/voices?id=" + encodeURIComponent(del.dataset.delv)); await reload(); drawVoices(); }); return; }
     if (card) { if(["elevenlabs","eleven_realtime"].includes(p.engine))p.tts_voice=card.dataset.v;else p.voice = card.dataset.v; drawVoices(); mark(); }
   });
@@ -601,6 +598,62 @@ function elevenKeysHtml() {
     <p class="note">Работает первый ключ с квотой. Кончилась — ключ откладывается до сброса лимита (обычно через месяц), и Джарвис сам берёт следующий.</p>`;
 }
 
+// memoryConn — карточка общей памяти: галочка, кто делает конспект, архив, конспект, «Начать новый чат», «Стереть память».
+const MEM_PROV = [["chatgpt", "Подписка ChatGPT"], ["gemini", "Google Gemini — ключ"], ["openai", "OpenAI — ключ, платно"]];
+function memoryConn(m, ms) {
+  const day = (u) => new Date(u * 1000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  const at = (u) => new Date(u * 1000).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  const n = m.archive || 0, turns = m.turns || 0, has = ms.has || {}, off = !!ms.off;
+  const pname = (id) => MEM_PROV.find(([x]) => x === id)?.[1] || id;
+  const mname = (x) => x || "по очереди: кончился лимит — следующая";
+  const prov = ms.provider || "", mprov = has[prov] ? prov : ms.active;   // модели — у выбранного или у того, кто работает сейчас
+  const who = ms.active ? `Сейчас конспект делает: <b>${esc(pname(ms.active))}</b> · ${esc(mname(ms.active_model))}.` : "";
+  const pick = off ? "" : `<div class="row">
+      <div class="f half"><label for="mem-prov">Кто делает конспект ${tip("«Сам выбирает» берёт сначала бесплатное: подписку ChatGPT, потом Gemini, потом платный ключ OpenAI. Если один не ответил — следующий. Конспект — короткий текстовый запрос раз в несколько десятков реплик.")}</label>
+        <select id="mem-prov"><option value=""${prov ? "" : " selected"}>Сам выбирает</option>${MEM_PROV.map(([id, nm]) => `<option value="${id}"${prov === id ? " selected" : ""}${has[id] ? "" : " disabled"}>${esc(nm)}${has[id] ? "" : " — не подключено"}</option>`).join("")}<option value="none"${prov === "none" ? " selected" : ""}>Не делать конспект</option></select></div>
+      ${mprov && prov !== "none" ? `<div class="f half"><label for="mem-model">Модель</label><select id="mem-model">${(ms.models?.[mprov] || []).map((x) => `<option value="${esc(x)}"${x === (ms.active_model ?? "") ? " selected" : ""}>${esc(mname(x))}</option>`).join("")}</select></div>` : ""}
+    </div>
+    ${prov === "none" ? `<p class="note">Конспект не делается: Джарвис видит только последние реплики, а старое находит в архиве по «вспомни».</p>`
+      : ms.active ? `<p class="note">${who}${prov && !has[prov] ? ` Выбранное не подключено — пока работает автовыбор.` : ""}</p>`
+      : `<p class="err">Для конспекта нужна текстовая модель: подписка ChatGPT, ключ Gemini или ключ OpenAI. Пока её нет, старое не сжимается, но архив для «вспомни» пишется.</p>`}`;
+  return { id: "memory", group: "voice", mono: "Пм", name: "Память Джарвиса",
+    about: "Джарвис помнит вас: досье, конспект разговоров и архив реплик — общие для всех ассистентов",
+    on: !off && n > 0, state: off ? "выключена" : n ? `${n} ${plural(n, "реплика", "реплики", "реплик")} в архиве` : "пусто",
+    body: `<label class="sw"><input type="checkbox" id="mem-on"${off ? "" : " checked"}><span class="tr"></span>Запоминать разговоры ${tip("Выключите — и каждый разговор начнётся с чистого листа: Джарвис не получит ни конспекта, ни прошлых реплик, а архив не будет пополняться. То, что уже записано, останется.")}</label>
+      ${off ? `<p class="note">Память выключена: каждый разговор — с чистого листа. Архив не пополняется, но и не стирается.</p>`
+        : `<p class="note">В начале разговора Джарвис получает досье о вас, конспект недавних разговоров и последние реплики дословно, с датой и временем.
+        Когда разговор становится длинным, в паузе старые реплики сжимаются: устойчивое о вас — в досье, остальное — в конспект, кто что сказал и когда.
+        Последние ${5000} реплик хранятся дословно, а что старше — сжимается в летопись по месяцам, так что ничего не пропадает.
+        Говорить «вспомни» не нужно: на «тот рецепт» или «как я рассказывал» он сам поищет в архиве и летописи.
+        Попросите «забудь, что…» или «меня зовут не Сергей, а Павел» — он сотрёт это и перепишет память.</p>`}
+      ${pick}
+      <p class="note">${n ? `В архиве ${n} ${plural(n, "реплика", "реплики", "реплик")}${m.archive_since ? ` с ${day(m.archive_since)}` : ""}. В текущем чате — ${turns}.` : "Архив пока пуст."}</p>
+      ${m.profile ? `<details open><summary>Что Джарвис знает о вас</summary><div class="mem-sum">${esc(m.profile)}</div></details>`
+        : n && !off ? `<p class="note">Досье о вас пока пустое: оно заполняется, когда разговор сжимается (примерно каждые 20–30 реплик). Нажмите «Обновить досье сейчас», чтобы не ждать.</p>` : ""}
+      ${m.summary ? `<details><summary>Конспект недавних разговоров${m.summary_at ? ` · обновлён ${at(m.summary_at)}` : ""}</summary><div class="mem-sum">${esc(m.summary)}</div></details>` : ""}
+      ${(m.chronicle || []).length ? `<details><summary>Летопись · ${m.chronicle.length} ${plural(m.chronicle.length, "месяц", "месяца", "месяцев")}</summary>${m.chronicle.slice().reverse().map((c) => `<h4 class="mem-m">${esc(c.label)} <small>${c.turns} ${plural(c.turns, "реплика", "реплики", "реплик")}</small></h4><div class="mem-sum">${esc(c.text)}</div>`).join("")}</details>` : ""}
+      ${m.recent ? `<details><summary>Последние реплики из архива</summary><div class="mem-sum">${esc(m.recent)}</div></details>` : ""}
+      <div class="row">${!off && ms.active && n ? `<button class="btn" id="mem-compact" data-tip="Сжать разговор в досье и конспект сразу, не дожидаясь длинного разговора">Обновить досье сейчас</button>` : ""}<button class="btn" id="cg-newchat"${turns || m.summary ? "" : " disabled"} data-tip="Досье, летопись и архив останутся">Начать новый чат</button></div>`,
+    drop: n ? `<button class="btn ghost danger" id="mem-erase">Стереть память</button>` : "" };
+}
+
+// memChange — галочка и выбор модели памяти (select не ловится кликом — слушаем change).
+async function memChange(e) {
+  if (page !== "connections") return;
+  const t = e.target;
+  if (!["mem-on", "mem-prov", "mem-model"].includes(t.id)) return;
+  const ms = S.chatgpt?.memory || {};
+  const next = { off: !!ms.off, provider: ms.provider || "", model: ms.model || "" };
+  if (t.id === "mem-on") next.off = !t.checked;
+  if (t.id === "mem-prov") { next.provider = t.value; next.model = ""; }
+  if (t.id === "mem-model") next.model = t.value;
+  try {
+    await api("PUT", "/api/settings", { memory: next });
+    await reload(); drawConns();
+    toast(t.id === "mem-on" ? (next.off ? "Память выключена — каждый разговор с чистого листа" : "Джарвис снова запоминает разговоры") : "Сохранено: кто делает конспект");
+  } catch (err) { toast(err.message, true); await reload(); drawConns(); }
+}
+
 function connDefs() {
   const k = S.keys, v = S.vless, cg = S.chatgpt, lg = cg.login || {}, yt = S.youtube || {}, ya = yt.account || {}, sp = S.spotify || {};
   const keyBody = (id, place, how, label) => `<div class="f"><label for="k-${id}">${label ? label[0] : k[id] ? "Новый ключ" : "Ключ"}</label><div class="row"><input type="password" id="k-${id}" placeholder="${place}" autocomplete="off"><button class="btn primary" data-key="${id}">${label ? label[1] : k[id] ? "Заменить" : "Сохранить"}</button></div></div>
@@ -625,13 +678,13 @@ function connDefs() {
       wait: !cg.signed_in && !!lg.code,
       body: cg.signed_in ? `<div class="cn-ok">${icon("done")}<span>Колонка вошла в ChatGPT${cg.plan ? ` · <b>${esc(cg.plan)}</b>` : ""}${cg.email ? `<small>${esc(cg.email)}</small>` : ""}</span></div>
           ${cg.limited_until * 1000 > Date.now() ? `<p class="err">Кончился лимит голоса в подписке. До ${new Date(cg.limited_until * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} Джарвис говорит через Gemini${S.keys?.gemini ? "" : " — но ключа Gemini нет, добавьте его ниже"}.</p>` : ""}
-          <p class="note">Один чат на все разговоры (память общая для всех ассистентов): ChatGPT помнит ${cg.chat?.turns ? `${cg.chat.turns} ${plural(cg.chat.turns, "последнюю реплику", "последние реплики", "последних реплик")}` : "прошлые реплики"}, даже после перезапуска колонки.</p>
-          <div class="row"><button class="btn" id="cg-newchat"${cg.chat?.turns ? "" : " disabled"}>Начать новый чат</button></div>`
+          <p class="note">Все звонки — один разговор с общей памятью, она описана в карточке «Память Джарвиса».</p>`
         : lg.code ? `<ol class="how cn-steps"><li>Откройте <a href="${esc(lg.url)}" target="_blank" rel="noopener">${esc(lg.url.replace("https://", ""))}</a> (из России и Беларуси — через VPN) и войдите в свой ChatGPT.</li><li>Введите код: <b class="code-big">${esc(lg.code)}</b></li><li>Это окно само увидит вход — ничего нажимать не нужно.</li></ol>`
         : `${lg.error ? `<p class="err">${esc(lg.error)}</p>` : ""}<div class="row"><button class="btn primary" id="cg-in">Войти в ChatGPT</button></div>
           <p class="note">Колонка получит свой вход, пароль она не видит. Способ неофициальный, как у Codex: OpenAI может его изменить.</p>`
         + vpnRow("chatgpt"),
       drop: cg.signed_in ? `<button class="btn ghost danger" id="cg-out">Выйти</button>` : "" },
+    memoryConn(cg.chat || {}, cg.memory || {}),
     key("openai", { vpn: "openai", group: "voice", mono: "AI", name: "OpenAI", place: "sk-…", about: "Голос и «мозг» Джарвиса. Живой разговор — примерно 5 центов в минуту",
       how: "<li>Откройте platform.openai.com и войдите.</li><li>Слева — API keys → Create new secret key.</li><li>Скопируйте ключ (начинается с sk-) и вставьте сюда.</li><li>Пополните баланс в разделе Billing — от 5 $.</li>" }),
     key("gemini", { vpn: "gemini", top: geminiKeysHtml(), label: k.gemini ? ["Ещё ключ — в запас", "Добавить"] : null,
@@ -704,7 +757,8 @@ function viewConnections() {
   <div class="modal hidden" id="cn-modal" role="dialog" aria-modal="true" aria-labelledby="cn-mt"><div class="modal-bg" data-close></div><div class="modal-card cn-card" id="cn-card"></div></div>`;
   CONN.open = "";
   const view = $("#view");
-  view.oninput = view.onchange = null;
+  view.oninput = null;
+  view.onchange = memChange;
   view.onclick = connClick;
   view.onkeydown = (e) => {
     if (page !== "connections") return; // обработчик висит на #view и после ухода со страницы
@@ -859,7 +913,9 @@ async function connClick(e) {
     },"Home Assistant подключён");
     case "ha-disconnect": return act(btn,async()=>{await api("DELETE","/api/home-assistant");CONN.haEntities=[];await redraw();},"Home Assistant отключён");
     case "cg-in": return act(btn, async () => { await api("POST", "/api/chatgpt/login"); await redraw(); });
-    case "cg-newchat": if (confirm("Начать новый чат? ChatGPT забудет прошлые разговоры.")) act(btn, async () => { await api("POST", "/api/chatgpt/newchat"); await redraw(); }, "Новый чат начат"); return;
+    case "cg-newchat": if (confirm("Начать новый чат? Джарвис забудет конспект и недавние реплики. Досье о вас, летопись и архив останутся.")) act(btn, async () => { await api("POST", "/api/chatgpt/newchat"); await redraw(); }, "Новый чат начат"); return;
+    case "mem-compact": act(btn, async () => { const r = await api("POST", "/api/memory/compact"); await redraw(); if (!r.turns) toast("Сжимать пока нечего"); }, "Досье и конспект обновлены"); return;
+    case "mem-erase": if (confirm("Стереть всю память Джарвиса — досье о вас, конспект, летопись и архив разговоров? Это не отменить.")) act(btn, async () => { await api("POST", "/api/chatgpt/newchat?all=1"); await redraw(); }, "Память стёрта"); return;
     case "cg-out": if (confirm("Выйти из ChatGPT на колонке?")) act(btn, async () => { await api("DELETE", "/api/chatgpt"); await redraw(); }); return;
     case "sl-in": {
       const code = $("#sl-code").value.trim();
@@ -2142,59 +2198,188 @@ const Motion = (() => {
   return { S, step, settled, clamp, reduce, after: (s, f) => { after(s, f); wake(); }, add: (c) => { comps.add(c); wake(); }, remove: (c) => comps.delete(c) };
 })();
 
-// ---------------------------------------------------------------- ответ Джарвиса «печатается»: слова всплывают по одному
-// Пузырь открывается из пилюли «Думаю» и растёт пружиной (260/26); каждое слово поднимается и проясняется
-// на своей пружине (340/26) с шагом 70 мс — как Streaming reply из designbookmark.
-const shownWords = {};   // ts реплики → сколько слов ответа уже показано
-const bubbleSize = {};   // ts → последний размер пузыря (из него растёт следующий)
+// ---------------------------------------------------------------- переписка на главной
+// Строки переписки живут по ключам и меняются на месте: опрос раз в полсекунды не пересоздаёт пузыри,
+// поэтому начатая анимация не обрывается, а уже показанные слова не мигают.
+// Ответ Джарвиса «печатается»: пузырь открывается из пилюли «Думаю» и растёт пружиной (260/26),
+// каждое новое слово поднимается и проясняется на своей пружине (340/26) с шагом 70 мс, а высота
+// пузыря идёт строка за строкой вслед за последним показанным словом. Если человек внизу переписки,
+// окно каждый кадр следует за растущим пузырём — текст не уходит за край.
+const FEED = { el: null, rows: new Map(), first: true, stick: true };
 
-function answerHtml(ts, text, animate) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const from = animate ? Math.min(shownWords[ts] ?? 0, words.length) : words.length;
-  shownWords[ts] = words.length;
-  if (from >= words.length) return esc(text);
-  return esc(words.slice(0, from).join(" ")) + (from ? " " : "") + words.slice(from).map((w) => `<span class="wd">${esc(w)}</span>`).join(" ");
+function feedReset(feed) {
+  for (const st of FEED.rows.values()) if (st.anim) Motion.remove(st.anim.comp);
+  Object.assign(FEED, { el: feed, rows: new Map(), first: true, stick: true });
+  if (!feed) return;
+  feed.addEventListener("scroll", () => { FEED.stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80; }, { passive: true });
 }
 
-function streamBubbles(feed) {
-  for (const b of feed.querySelectorAll(".b.him[data-k]")) {
-    const k = b.dataset.k, natural = { w: b.offsetWidth, h: b.offsetHeight };
-    const prev = bubbleSize[k];
-    bubbleSize[k] = natural;
-    const words = [...b.querySelectorAll(".wd")];
-    if (Motion.reduce || (!words.length && (!prev || (prev.w === natural.w && prev.h === natural.h)))) continue;
-    // размер: из прежнего (пилюля «Думаю» или прошлый кусок ответа) в новый
-    const from = prev || { w: Math.min(natural.w, 96), h: Math.min(natural.h, 36) };
-    const W = Motion.S(from.w, 260, 26), H = Motion.S(from.h, 260, 26);
-    W.t = natural.w; H.t = words.length ? Math.max(from.h, Math.min(natural.h, 36)) : natural.h;
-    b.classList.add("growing");
-    const ws = words.map((el) => ({ el, s: Motion.S(0, 340, 26), on: false }));
-    // высота растёт строка за строкой — вслед за последним появившимся словом
-    ws.forEach((w, i) => { w.el.style.opacity = 0; Motion.after(i * 0.07, () => {
-      w.on = true; w.s.t = 1;
-      H.t = i === ws.length - 1 ? natural.h : Math.min(natural.h, Math.max(H.t, w.el.offsetTop + w.el.offsetHeight + 8));
-    }); });
-    const c = {
-      frame(dt) { Motion.step(W, dt); Motion.step(H, dt); ws.forEach((w) => w.on && Motion.step(w.s, dt)); },
+function feedFollow() {
+  const f = FEED.el;
+  if (f && FEED.stick && f.isConnected) f.scrollTop = f.scrollHeight;
+}
+
+function feedSync(feed, rows) {
+  if (FEED.el !== feed) feedReset(feed);
+  const animate = !FEED.first && !Motion.reduce, keep = new Set();
+  let prev = null;
+  for (const r of rows) {
+    keep.add(r.key);
+    let st = FEED.rows.get(r.key);
+    if (!st) {
+      const el = document.createElement("div");
+      st = { el, cls: "", html: null, text: null, meta: null, anim: null };
+      FEED.rows.set(r.key, st);
+      feedPaint(st, r, false);
+      if (animate && !r.answer) el.classList.add("new");   // ответ не «выпрыгивает», а печатается
+      if (animate && r.answer) { st.text = null; el.querySelector(":scope > .t").textContent = ""; }
+    } else if (st.cls !== r.cls || st.html !== (r.html ?? null) || st.text !== (r.answer ?? null) || st.meta !== (r.meta ?? null)) {
+      const old = animate ? { w: st.el.offsetWidth, h: st.el.offsetHeight } : null;
+      feedPaint(st, r, animate, old);
+    }
+    const after = prev ? prev.el : null;
+    if (st.el.parentNode !== feed || st.el.previousElementSibling !== after) feed.insertBefore(st.el, after ? after.nextSibling : feed.firstChild);
+    if (animate && r.answer && st.text === null) feedAnswer(st, r.answer, null);   // новый ответ — уже в DOM, можно мерить
+    prev = st;
+  }
+  for (const [k, st] of FEED.rows) if (!keep.has(k)) { if (st.anim) Motion.remove(st.anim.comp); st.el.remove(); FEED.rows.delete(k); }
+  FEED.first = false;
+  feedFollow();
+}
+
+// feedPaint — содержимое строки. old — размер до правки: из него пузырь плавно перейдёт в новый.
+function feedPaint(st, r, animate, old) {
+  const el = st.el;
+  if (st.cls !== r.cls) {
+    el.className = r.cls + (st.anim ? " growing" : "");
+    st.cls = r.cls;
+    if (r.label) el.setAttribute("aria-label", r.label); else el.removeAttribute("aria-label");
+  }
+  if (!r.answer) {
+    if (st.html !== r.html) { el.innerHTML = r.html; st.html = r.html; st.text = st.meta = null; }
+    if (animate && old) feedMorph(st, old);
+    return;
+  }
+  // ответ: <span class="t">слова</span><span class="m">время</span>
+  if (st.html !== null || !el.querySelector(":scope > .t")) {
+    el.innerHTML = `<span class="t"></span><span class="m"></span>`;
+    st.html = null; st.text = null;
+  }
+  if (st.meta !== r.meta) { el.querySelector(":scope > .m").innerHTML = r.meta; st.meta = r.meta; }
+  if (st.text === r.answer) { if (animate && old) feedMorph(st, old); return; }
+  if (!animate || !old) { el.querySelector(":scope > .t").textContent = r.answer; st.text = r.answer; return; }
+  feedAnswer(st, r.answer, old);
+}
+
+const feedWords = (t) => t.split(/(\s+)/).filter((x) => x !== "");
+
+// feedAnswer — допечатать ответ: дописалось в конец — новые слова всплывают по очереди после уже идущих;
+// текст переписался целиком — показываем его заново.
+function feedAnswer(st, text, old) {
+  const t = st.el.querySelector(":scope > .t");
+  let add = text;
+  if (st.text && text.startsWith(st.text)) add = text.slice(st.text.length);
+  else t.textContent = "";
+  st.text = text;
+  const spans = [];
+  for (const part of feedWords(add)) {
+    if (/^\s+$/.test(part)) { t.append(part); continue; }
+    const w = document.createElement("span");
+    w.className = "wd"; w.textContent = part; w.style.opacity = "0";
+    t.append(w); spans.push(w);
+  }
+  feedMorph(st, old || { w: Math.min(st.el.offsetWidth, 96), h: Math.min(st.el.offsetHeight, 36) }, spans);
+}
+
+// feedMorph — пузырь плавно меняет размер и показывает новые слова, продолжая уже идущую анимацию.
+// Раскладка текста сразу окончательная (ширина пузыря в потоке — полная), поэтому показанные слова никогда
+// не перескакивают между строками. Видимую ширину открывает маска clip-path за последним показанным словом,
+// высоту — пружина (overflow: hidden): строка за строкой. Подпись со временем едет вместе с правым краем.
+function feedMorph(st, old, spans = []) {
+  const el = st.el, meta = el.classList.contains("ans") ? el.querySelector(":scope > .m") : null;
+  let a = st.anim;
+  el.style.height = el.style.clipPath = "";
+  if (meta) meta.style.right = "";
+  if (!a) el.classList.add("growing");
+  if (meta) el.style.minWidth = meta.offsetWidth + 24 + "px";   // подпись в анимации вне потока — ширину держим сами
+  const natural = { w: el.offsetWidth, h: el.offsetHeight };
+  if (!a) {
+    if (!spans.length && Math.abs(old.w - natural.w) < 1 && Math.abs(old.h - natural.h) < 1) {
+      el.classList.remove("growing"); el.style.minWidth = "";
+      return;
+    }
+    const cs = getComputedStyle(el);
+    a = st.anim = {
+      W: Motion.S(Math.min(old.w, natural.w), 260, 26), H: Motion.S(old.h, 260, 26), words: [], clock: 0, next: 0, natural,
+      left: el.classList.contains("me"), meta, padB: parseFloat(cs.paddingBottom) || 8, padR: parseFloat(cs.paddingRight) || 12,
+      round: `${cs.borderTopLeftRadius} ${cs.borderTopRightRadius} ${cs.borderBottomRightRadius} ${cs.borderBottomLeftRadius}`, reveal: false,
+    };
+    a.comp = {
+      frame(dt) {
+        a.clock += dt;
+        for (const w of a.words) {
+          if (!w.on && a.clock >= w.at) { w.on = true; w.s.t = 1; a.reveal = true; }
+          if (w.on && !w.fin) Motion.step(w.s, dt);
+        }
+        Motion.step(a.W, dt); Motion.step(a.H, dt);
+      },
       render() {
-        if (!b.isConnected) return;
-        b.style.width = W.x.toFixed(1) + "px"; b.style.height = H.x.toFixed(1) + "px";
-        for (const w of ws) {
-          if (!w.on) continue;
+        if (!el.isConnected) return;
+        if (a.reveal) { a.reveal = false; feedTargets(a); }
+        feedClip(el, a);
+        for (const w of a.words) {
+          if (!w.on || w.fin) continue;
           const v = Motion.clamp(w.s.x, 0, 1.2), o = Motion.clamp(v, 0, 1);
           w.el.style.opacity = o.toFixed(3);
           w.el.style.transform = `translateY(${((1 - w.s.x) * 6).toFixed(2)}px)`;
           w.el.style.filter = v < 0.98 ? `blur(${((1 - o) * 4).toFixed(2)}px)` : "none";
+          if (Motion.settled(w.s)) { w.fin = true; w.el.style.cssText = ""; }
         }
+        feedFollow();
       },
       done() {
-        const fin = !b.isConnected || (Motion.settled(W) && Motion.settled(H) && ws.every((w) => w.on && Motion.settled(w.s)));
-        if (fin && b.isConnected) { b.style.width = b.style.height = ""; b.classList.remove("growing"); ws.forEach((w) => { w.el.style.cssText = ""; }); }
+        const fin = !el.isConnected || (a.words.every((w) => w.fin) && Motion.settled(a.W) && Motion.settled(a.H));
+        if (fin) {
+          if (el.isConnected) {
+            el.style.height = el.style.clipPath = el.style.minWidth = "";
+            if (a.meta) a.meta.style.right = "";
+            el.classList.remove("growing");
+            for (const w of a.words) w.el.style.cssText = "";
+          }
+          if (st.anim === a) st.anim = null;
+          feedFollow();
+        }
         return fin;
       },
     };
-    Motion.add(c);
   }
+  a.natural = natural;
+  a.next = Math.max(a.next, a.clock);
+  for (const w of spans) { a.words.push({ el: w, s: Motion.S(0, 340, 26), on: false, fin: false, at: a.next }); a.next += 0.07; }
+  feedTargets(a);
+  feedClip(el, a);
+  Motion.add(a.comp);   // уже в цикле — просто будит его
+}
+
+// Цели пружин: ширина — до правого края самого дальнего показанного слова (и не уже подписи),
+// высота — до низа последнего показанного слова; когда показано всё — полный размер пузыря.
+function feedTargets(a) {
+  let last = null, all = true, right = 0;
+  for (const w of a.words) {
+    if (!w.on) { all = false; continue; }
+    last = w; right = Math.max(right, w.el.offsetLeft + w.el.offsetWidth);
+  }
+  if (all) { a.W.t = a.natural.w; a.H.t = a.natural.h; return; }
+  const metaW = a.meta ? a.meta.offsetWidth + 2 * a.padR : 0;
+  a.W.t = Math.min(a.natural.w, Math.max(a.W.t, right + a.padR, metaW));
+  if (last) a.H.t = Math.min(a.natural.h, Math.max(a.H.t, last.el.offsetTop + last.el.offsetHeight + a.padB));
+}
+
+function feedClip(el, a) {
+  const cut = Math.max(0, a.natural.w - Math.min(a.W.x, a.natural.w));
+  el.style.height = a.H.x.toFixed(1) + "px";
+  el.style.clipPath = cut < 0.5 ? "" : a.left ? `inset(0 0 0 ${cut.toFixed(1)}px round ${a.round})` : `inset(0 ${cut.toFixed(1)}px 0 0 round ${a.round})`;
+  if (a.meta) a.meta.style.right = (a.padR + cut).toFixed(1) + "px";
 }
 
 // ---------------------------------------------------------------- «желейный» ползунок (designbookmark Jelly slider)

@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -75,10 +77,19 @@ func withEnv(v any, lib, sock string) []any {
 					preload += ":" + p
 				}
 			}
-		case strings.HasPrefix(s, "JARVIS_MIC_SOCKET="), strings.HasPrefix(s, "ALICE_CAPTURE_SOCKET="):
+		case strings.HasPrefix(s, "JARVIS_MIC_SOCKET="), strings.HasPrefix(s, "ALICE_CAPTURE_SOCKET="), strings.HasPrefix(s, "JARVIS_MIC_CHANNEL="):
 		default:
 			out = append(out, e)
 		}
 	}
-	return append(out, "LD_PRELOAD="+preload, "JARVIS_MIC_SOCKET="+sock)
+	out = append(out, "LD_PRELOAD="+preload, "JARVIS_MIC_SOCKET="+sock)
+	// mic-channel рядом с vqe_tap.so («6:0») — другой канал VQE, если на прошивке он не тип 6 (см. jarvisd diag-mic)
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(lib), "mic-channel")); err == nil {
+		if ch := strings.TrimSpace(string(b)); micChannelRe.MatchString(ch) {
+			out = append(out, "JARVIS_MIC_CHANNEL="+ch)
+		}
+	}
+	return out
 }
+
+var micChannelRe = regexp.MustCompile(`^\d{1,2}:\d$`)

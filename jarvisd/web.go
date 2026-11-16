@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,11 @@ type Web struct {
 
 	mu      sync.Mutex
 	resetAt time.Time // пароль сброшен кнопками — новый можно задать в течение 30 минут
+
+	prevMu     sync.Mutex // пробы голосов: последнее нажатие ▶ побеждает
+	prevSeq    uint64
+	prevCancel context.CancelFunc
+	prevDone   chan struct{}
 }
 
 type failInfo struct {
@@ -101,6 +107,7 @@ func (w *Web) Serve(addr string) error {
 	mux.HandleFunc("POST /api/chatgpt/login", w.auth(w.chatgptLogin))
 	mux.HandleFunc("DELETE /api/chatgpt", w.auth(w.chatgptLogout))
 	mux.HandleFunc("POST /api/chatgpt/newchat", w.auth(w.chatgptNewChat))
+	mux.HandleFunc("POST /api/memory/compact", w.auth(w.memoryCompact))
 	mux.HandleFunc("PUT /api/vless", w.auth(w.putVless))
 	mux.HandleFunc("PUT /api/youtube", w.auth(w.putYouTube))
 	mux.HandleFunc("PUT /api/spotify", w.auth(w.putSpotify))
@@ -400,9 +407,9 @@ func (w *Web) state(rw http.ResponseWriter, r *http.Request) {
 		"eleven_keys": s.ElevenKeysState(), "gemini_keys": GeminiKeysState(s.GeminiKeys), "vpn": s.VPNState(),
 		"gemini_models": GeminiModels, "gemini_model_info": GeminiModelInfo, "gemini_voice_groups": GeminiVoiceGroups, "chatgpt_voice_groups": ChatGPTVoiceGroups, "grok_voice_groups": GrokVoiceGroups,
 		"chatgpt": map[string]any{"signed_in": s.ChatGPT.SignedIn(), "plan": s.ChatGPT.Plan, "email": s.ChatGPT.Email,
-			"login": w.chatLogin.State(), "chat": chatgptChat.State(), "limited_until": chatgptLimitedUntil.Load() / 1e9},
+			"login": w.chatLogin.State(), "chat": chatgptChat.State(), "memory": memoryState(s), "limited_until": chatgptLimitedUntil.Load() / 1e9},
 		"vless": vless, "youtube": w.youtubeState(), "spotify": w.spotifyState(), "home_assistant": w.haState(), "xiaomi": w.xiaomiState(), "smartlife": w.smartLifeState(), "rooms": w.knownRooms(), "update_available": w.updater != nil && w.updater.Available(),
-		"speaker": map[string]any{"model": stationModel().Name, "model_id": stationModel().ID, "mic": w.engine.mic.Online(), "leds": w.engine.leds.Available(), "wake_model": wakeModel,
+		"speaker": map[string]any{"model": stationModel().Name, "model_id": stationModel().ID, "mic": w.engine.mic.Online(), "mic_why": micWhyText(), "leds": w.engine.leds.Available(), "wake_model": wakeModel,
 			"talking": w.engine.Talking(), "uptime_s": int(time.Since(w.started).Seconds()), "volume": speakerVolume()},
 		"settings": map[string]any{"wake_enabled": s.WakeEnabled, "wake_sensitivity": s.WakeSensitivity, "mic_boost_db": s.MicBoostDB, "mic_gain_db": s.MicGainDB, "wake_check": s.WakeCheck,
 			"follow_up_s": s.FollowUpS, "city": s.City, "timezone": s.Timezone, "volume": s.Volume, "lan_only": s.LANOnly, "home_via": s.HomeVia, "home_use": s.HomeUseState(), "speaker_room": s.SpeakerRoom,
@@ -435,7 +442,7 @@ func (w *Web) getJournal(rw http.ResponseWriter, r *http.Request) {
 	if !w.engine.Talking() {
 		phase = ""
 	}
-	writeJSON(rw, 200, map[string]any{"items": w.journal.Items(50), "mic": w.engine.mic.Online(),
+	writeJSON(rw, 200, map[string]any{"items": w.journal.Items(50), "mic": w.engine.mic.Online(), "mic_why": micWhyText(),
 		"talking": w.engine.Talking(), "phase": phase, "sys": readSys(w.dataDir), "volume": speakerVolume(), "version": version})
 }
 
@@ -447,6 +454,7 @@ func (w *Web) putSettings(rw http.ResponseWriter, r *http.Request) {
 		WakeSensitivity *int            `json:"wake_sensitivity"`
 		MicBoostDB      *int            `json:"mic_boost_db"`
 		MicGainDB       *int            `json:"mic_gain_db"`
+		Memory          *MemorySettings `json:"memory"`
 		FollowUpS       *float64        `json:"follow_up_s"`
 		City            *string         `json:"city"`
 		Timezone        *string         `json:"timezone"`
@@ -491,6 +499,12 @@ func (w *Web) putSettings(rw http.ResponseWriter, r *http.Request) {
 		}
 		if req.MicGainDB != nil {
 			s.MicGainDB = max(0, min(30, *req.MicGainDB))
+		}
+		if m := req.Memory; m != nil {
+			if m.Provider != "" && m.Provider != "none" && !slices.Contains(memoryProviders, m.Provider) {
+				return errors.New("неизвестный провайдер для конспекта")
+			}
+			s.Memory = MemorySettings{Off: m.Off, Provider: m.Provider, Model: strings.TrimSpace(m.Model)}
 		}
 		if req.FollowUpS != nil {
 			s.FollowUpS = max(0, min(30, *req.FollowUpS))
@@ -1054,17 +1068,26 @@ func (w *Web) stop(rw http.ResponseWriter, r *http.Request) {
 
 const previewPhrase = "Привет! Я Джарвис. Так звучит мой голос."
 
-// voiceFile — где лежит готовая пробная фраза голоса (PCM s16le, 16 кГц). Генерируется один раз,
-// дальше играет с диска: бесплатно и мгновенно. Имя зависит от фразы и описания голоса.
-func (w *Web) voiceFile(voice, prompt string) string {
-	name := strings.Map(func(r rune) rune {
+// voiceFile — где лежит готовая пробная фраза голоса (PCM s16le). Генерируется один раз, дальше играет
+// с диска: бесплатно и мгновенно. Имя зависит от голоса, а хеш — от фразы, описания голоса и модели:
+// сменилась модель (Live 1 → 1.1) — образец синтезируется заново, а старый удаляется при сохранении нового.
+func (w *Web) voiceFile(voice, prompt, model string) string {
+	name := voiceFileName(voice)
+	key := previewPhrase + "\n" + prompt
+	if model != "" {
+		key += "\n" + model
+	}
+	sum := sha256.Sum256([]byte(key))
+	return filepath.Join(w.dataDir, "voices", name+"-"+hex.EncodeToString(sum[:4])+".s16")
+}
+
+func voiceFileName(voice string) string {
+	return strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
 			return r
 		}
 		return -1
 	}, voice)
-	sum := sha256.Sum256([]byte(previewPhrase + "\n" + prompt))
-	return filepath.Join(w.dataDir, "voices", name+"-"+hex.EncodeToString(sum[:4])+".s16")
 }
 
 // playPCM — отдать плееру весь кусок (очередь вмещает ~50 с) и дать доиграть в фоне.
@@ -1073,11 +1096,61 @@ func (w *Web) playPCM(pcm []int16, rate int, boost float64) error {
 		return err
 	}
 	w.engine.player.SetBoost(boost)
+	_ = w.engine.player.Write(make([]int16, rate*int(voiceWarmup/time.Millisecond)/1000)) // тракт просыпается — начало не срезается
 	for i := 0; i < len(pcm); i += 1600 {
-		_ = w.engine.player.Write(pcm[i:min(i+1600, len(pcm))])
+		if err := w.engine.player.Write(pcm[i:min(i+1600, len(pcm))]); err != nil {
+			if !w.engine.player.Playing() {
+				return nil // уже играет другая проба
+			}
+			return err
+		}
 	}
 	go w.engine.player.Finish(30 * time.Second)
 	return nil
+}
+
+// voiceCacheMax — сколько места на /data отдаём под образцы голосов (флеш у колонок маленький).
+const voiceCacheMax = 8 << 20
+
+// pruneVoices — убрать прежние образцы этого голоса (другая модель или описание) и, если кеш
+// разросся, самые давние образцы других голосов.
+func pruneVoices(path string) {
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	prefix := base[:len(base)-len("12345678.s16")]
+	ents, _ := os.ReadDir(dir)
+	type f struct {
+		name string
+		size int64
+		at   time.Time
+	}
+	var rest []f
+	var total int64
+	for _, e := range ents {
+		n := e.Name()
+		if n == base || !strings.HasSuffix(n, ".s16") {
+			continue
+		}
+		if strings.HasPrefix(n, prefix) && len(n) == len(base) {
+			_ = os.Remove(filepath.Join(dir, n))
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			rest = append(rest, f{n, info.Size(), info.ModTime()})
+			total += info.Size()
+		}
+	}
+	if info, err := os.Stat(path); err == nil {
+		total += info.Size()
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].at.Before(rest[j].at) })
+	for _, r := range rest {
+		if total <= voiceCacheMax {
+			break
+		}
+		if os.Remove(filepath.Join(dir, r.name)) == nil {
+			total -= r.size
+		}
+	}
 }
 
 func saveVoice(path string, pcm []int16) {
@@ -1095,9 +1168,72 @@ func saveVoice(path string, pcm []int16) {
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o700)
 	tmp := path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, path)
+	if os.WriteFile(tmp, b, 0o600) == nil && os.Rename(tmp, path) == nil {
+		pruneVoices(path) // старое — только после того, как новое легло на диск
+	} else {
+		_ = os.Remove(tmp)
 	}
+}
+
+// previewTake — «последнее нажатие ▶ побеждает»: прошлую пробу отменить и дождаться, пока она отпустит
+// плеер и флаг занятости. Возвращает контекст новой пробы, её номер и release (вызывать по завершении).
+func (w *Web) previewTake() (context.Context, uint64, func()) {
+	w.prevMu.Lock()
+	w.prevSeq++
+	seq := w.prevSeq
+	if w.prevCancel != nil {
+		w.prevCancel()
+	}
+	old := w.prevDone
+	ctx, cancel := context.WithCancel(context.Background()) // не r.Context: обновили страницу — проба всё равно доиграет и сохранится
+	done := make(chan struct{})
+	w.prevCancel, w.prevDone = cancel, done
+	w.prevMu.Unlock()
+	if old != nil {
+		select {
+		case <-old:
+		case <-time.After(5 * time.Second):
+		}
+	}
+	return ctx, seq, func() {
+		cancel()
+		close(done)
+		w.prevMu.Lock()
+		if w.prevDone == done {
+			w.prevCancel, w.prevDone = nil, nil
+		}
+		w.prevMu.Unlock()
+	}
+}
+
+func (w *Web) previewLatest(seq uint64) bool {
+	w.prevMu.Lock()
+	defer w.prevMu.Unlock()
+	return w.prevSeq == seq
+}
+
+// previewFreeSpeaker — освободить колонку для пробы. Открытый, но молчащий разговор (ждёт следующей
+// реплики) закрываем: пользователь явно нажал ▶. Если Джарвис прямо сейчас говорит или открывает
+// разговор — не мешаем.
+func (w *Web) previewFreeSpeaker() string {
+	e := w.engine
+	e.mu.Lock()
+	busy, live := e.busy, e.live != nil
+	e.mu.Unlock()
+	if !busy && !live {
+		return ""
+	}
+	if !live || e.leds.Phase() == LedSpeaking { // плеер в разговоре открыт всё время — говорит ли, видно по фазе
+		return "Джарвис сейчас разговаривает"
+	}
+	e.EndChat("проба голоса")
+	for i := 0; i < 30 && e.Talking(); i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if e.Talking() {
+		return "Джарвис ещё заканчивает разговор — нажмите ещё раз"
+	}
+	return ""
 }
 
 // chatgptLogin — начать вход в подписку ChatGPT: панель показывает код и ссылку.
@@ -1109,9 +1245,27 @@ func (w *Web) chatgptLogin(rw http.ResponseWriter, r *http.Request) {
 	writeJSON(rw, 200, w.chatLogin.State())
 }
 
-// chatgptNewChat — начать новый чат с ChatGPT: прошлые реплики забыть.
+// memoryCompact — «Обновить досье сейчас»: сжать реплики в досье и конспект, не дожидаясь длинного разговора.
+func (w *Web) memoryCompact(rw http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	defer cancel()
+	n, err := chatgptChat.CompactNow(ctx)
+	if err != nil {
+		bad(rw, shortErr(err))
+		return
+	}
+	writeJSON(rw, 200, map[string]any{"ok": true, "turns": n})
+}
+
+// chatgptNewChat — начать новый чат: конспект и недавние реплики забыть (архив для «вспомни» остаётся);
+// ?all=1 — стереть всю память вместе с архивом.
 func (w *Web) chatgptNewChat(rw http.ResponseWriter, r *http.Request) {
-	chatgptChat.Reset()
+	if r.URL.Query().Get("all") == "1" {
+		chatgptChat.Erase()
+		log.Printf("память: стёрта целиком из панели")
+	} else {
+		chatgptChat.Reset()
+	}
 	writeJSON(rw, 200, map[string]any{"ok": true})
 }
 
@@ -1122,6 +1276,7 @@ func (w *Web) chatgptLogout(rw http.ResponseWriter, r *http.Request) {
 
 // preview — колонка произносит пробную фразу выбранным голосом. Первый раз — короткая Live-сессия
 // (около цента), результат сохраняется на колонке; дальше та же фраза играет с диска.
+// Быстро жмут ▶ у разных голосов — звучит только последний: прошлая проба отменяется штатно, без ошибки.
 func (w *Web) preview(rw http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Voice, Engine string
@@ -1129,26 +1284,25 @@ func (w *Web) preview(rw http.ResponseWriter, r *http.Request) {
 	}
 	_ = readJSON(r, &req)
 	s := w.store.Get()
-	gem := req.Engine == "gemini"
+	p := s.ActiveProfile()
 	rate := MicRate
-	if gem {
+	var path string
+	switch req.Engine {
+	case "gemini":
 		req.Voice, rate = geminiVoice(req.Voice), geminiRate
-	}
-	if req.Engine == "chatgpt" {
+		path = w.voiceFile("gemini-"+req.Voice, "24k", geminiModel(p.LiveModel))
+	case "chatgpt":
 		req.Voice = chatgptVoice(req.Voice)
-	}
-	if req.Engine == "grok" {
+		path = w.voiceFile("chatgpt-"+req.Voice, "", chatgptLiveModel)
+	case "grok":
 		req.Voice, rate = grokVoice(req.Voice), grokRate
-	}
-	if req.Engine == "elevenlabs" {
+		path = w.voiceFile("grok-"+req.Voice, "24k", grokModel)
+	case "elevenlabs":
 		rate = elevenRate
-	}
-	if req.Engine == "eleven_realtime" {
+		path = w.voiceFile("elevenlabs-"+req.Voice, "24k/"+req.TTSModel, "")
+	case "eleven_realtime":
 		rate = elevenRate
-	}
-	if w.engine.Talking() {
-		bad(rw, "Джарвис сейчас разговаривает")
-		return
+		path = w.voiceFile("eleven-realtime-"+req.Voice, "24k", "")
 	}
 	vp := ""
 	for _, v := range s.LiveVoices {
@@ -1156,22 +1310,22 @@ func (w *Web) preview(rw http.ResponseWriter, r *http.Request) {
 			vp = v.Prompt
 		}
 	}
-	path := w.voiceFile(req.Voice, vp)
-	if gem {
-		path = w.voiceFile("gemini-"+req.Voice, "24k")
+	if path == "" {
+		path = w.voiceFile(req.Voice, vp, liveModel)
 	}
-	if req.Engine == "chatgpt" {
-		path = w.voiceFile("chatgpt-"+req.Voice, "")
+
+	ctx, seq, release := w.previewTake()
+	defer release()
+	interrupted := func() { writeJSON(rw, 200, map[string]any{"ok": true, "interrupted": true}) }
+	if !w.previewLatest(seq) { // пока ждали прошлую пробу, нажали следующий голос
+		interrupted()
+		return
 	}
-	if req.Engine == "grok" {
-		path = w.voiceFile("grok-"+req.Voice, "24k")
+	if msg := w.previewFreeSpeaker(); msg != "" {
+		bad(rw, msg)
+		return
 	}
-	if req.Engine == "elevenlabs" {
-		path = w.voiceFile("elevenlabs-"+req.Voice, "24k/"+req.TTSModel)
-	}
-	if req.Engine == "eleven_realtime" {
-		path = w.voiceFile("eleven-realtime-"+req.Voice, "24k")
-	}
+
 	if raw, err := os.ReadFile(path); err == nil && len(raw) > MicRate { // хотя бы полсекунды
 		pcm := make([]int16, len(raw)/2)
 		for i := range pcm {
@@ -1195,7 +1349,6 @@ func (w *Web) preview(rw http.ResponseWriter, r *http.Request) {
 		bad(rw, msg)
 		return
 	}
-	p := s.ActiveProfile()
 	p.Voice, p.WebSearch, p.Engine = req.Voice, false, req.Engine
 	if req.Engine == "eleven_realtime" {
 		p.TTSVoice = req.Voice
@@ -1207,18 +1360,24 @@ func (w *Web) preview(rw http.ResponseWriter, r *http.Request) {
 	}
 	e := w.engine
 	e.mu.Lock()
-	if e.busy || e.live != nil {
+	if e.busy || e.live != nil { // пока освобождали, Джарвиса позвали голосом
 		e.mu.Unlock()
 		bad(rw, "Джарвис сейчас занят")
 		return
 	}
-	e.busy, e.aborted = true, false // пока звучит проба, «Стоп» её обрывает
+	e.busy, e.aborted = true, false // пока звучит проба, «Стоп» её обрывает, а слово «Джарвис» не открывает разговор
 	e.mu.Unlock()
-	rec, err := e.sayAloud(s, p, vp, previewPhrase, 25*time.Second)
-	e.mu.Lock()
-	e.busy, e.aborted = false, false
-	e.mu.Unlock()
-	e.leds.Set(LedOff)
+	defer func() { // флаг отпускает тот, кто его поставил
+		e.mu.Lock()
+		e.busy, e.aborted = false, false
+		e.mu.Unlock()
+		e.leds.Set(LedOff)
+	}()
+	rec, err := e.sayAloudContext(ctx, s, p, vp, previewPhrase, 25*time.Second)
+	if errors.Is(err, errVoiceInterrupted) {
+		interrupted()
+		return
+	}
 	if err != nil {
 		bad(rw, shortErr(err))
 		return
@@ -1298,8 +1457,7 @@ func (w *Web) deleteVoice(rw http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if files, _ := filepath.Glob(filepath.Join(w.dataDir, "voices", "*.s16")); len(files) > 0 {
-		prefix := filepath.Base(w.voiceFile(id, ""))
-		prefix = prefix[:strings.LastIndex(prefix, "-")+1]
+		prefix := voiceFileName(id) + "-"
 		for _, f := range files {
 			if strings.HasPrefix(filepath.Base(f), prefix) {
 				_ = os.Remove(f)

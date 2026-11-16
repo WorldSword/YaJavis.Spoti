@@ -27,7 +27,10 @@ func askOpenAI(ctx context.Context, client *http.Client, key string, p Profile, 
 		model = BackendModels[0]
 	}
 	effort := normalizedModelEffort(model, p.Effort)
-	defs := append([]any{}, tools.Definitions()...)
+	defs := []any{}
+	if tools != nil { // nil — просто текст, без инструментов (конспект памяти)
+		defs = append(defs, tools.Definitions()...)
+	}
 	if p.WebSearch {
 		defs = append(defs, map[string]any{"type": "web_search"})
 	}
@@ -80,6 +83,9 @@ func askOpenAI(ctx context.Context, client *http.Client, key string, p Profile, 
 					}
 				}
 			case "function_call":
+				if tools == nil {
+					return "", errors.New("модель попросила инструмент, которого нет")
+				}
 				tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 				result := tools.Call(tctx, item.Name, item.Arguments)
 				cancel()
@@ -222,7 +228,7 @@ func (e *Engine) TextTurn(text string, speak bool) {
 			voicePrompt = v.Prompt
 		}
 	}
-	if _, err := e.sayAloud(s, p, voicePrompt, answer, 90*time.Second); err != nil {
+	if _, err := e.sayAloud(s, p, voicePrompt, answer, 90*time.Second); err != nil && !errors.Is(err, errVoiceInterrupted) {
 		log.Printf("текст: озвучка не удалась: %v", err)
 	}
 }
@@ -232,6 +238,13 @@ func (e *Engine) TextTurn(text string, speak bool) {
 func (e *Engine) sayAloud(s Settings, p Profile, voicePrompt, text string, limit time.Duration) ([]int16, error) {
 	return e.sayAloudContext(context.Background(), s, p, voicePrompt, text, limit)
 }
+
+// errVoiceInterrupted — озвучку оборвали намеренно («Стоп», новая проба голоса): это не сбой.
+var errVoiceInterrupted = errors.New("озвучка прервана")
+
+// voiceWarmup — тишина перед первой фразой: пока aplay открывает тракт и просыпается усилитель,
+// звук теряется, и без неё срезалось начало «Привет!».
+const voiceWarmup = 250 * time.Millisecond
 
 func (e *Engine) sayAloudContext(parent context.Context, s Settings, p Profile, voicePrompt, text string, limit time.Duration) ([]int16, error) {
 	ctx, cancel := context.WithTimeout(parent, limit)
@@ -263,12 +276,13 @@ func (e *Engine) sayAloudContext(parent context.Context, s Settings, p Profile, 
 	if err := sess.Say(text); err != nil {
 		return nil, err
 	}
-	if err := e.player.StartVoice(sess); err != nil {
-		return nil, err
-	}
-	e.leds.Set(LedSpeaking)
 	var rec []int16
-	heard := false
+	started, heard, writeErrs := false, false, 0
+	defer func() {
+		if writeErrs > 0 {
+			log.Printf("озвучка: плеер не принял %d кусков звука", writeErrs)
+		}
+	}()
 	quietSince := time.Now()
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
@@ -276,13 +290,28 @@ func (e *Engine) sayAloudContext(parent context.Context, s Settings, p Profile, 
 		select {
 		case pcm, ok := <-sess.Audio():
 			if !ok {
-				e.player.Finish(3 * time.Second)
+				if started {
+					e.player.Finish(3 * time.Second)
+				}
 				if !heard {
 					return nil, errors.New("голос не прозвучал")
 				}
 				return rec, nil
 			}
-			_ = e.player.Write(pcm)
+			if !started { // плеер — только с первым звуком, а не пока модель думает (иначе aplay уходит в недогрузку)
+				if err := e.player.StartVoice(sess); err != nil {
+					return nil, err
+				}
+				e.leds.Set(LedSpeaking)
+				_ = e.player.Write(make([]int16, sess.Rate()*int(voiceWarmup/time.Millisecond)/1000))
+				started = true
+			}
+			if err := e.player.Write(pcm); err != nil {
+				if !e.player.Playing() { // плеер забрали (новая проба, разговор) — нас перебили
+					return rec, errVoiceInterrupted
+				}
+				writeErrs++
+			}
 			e.leds.Level(peakOf(pcm) / 9000)
 			rec = append(rec, pcm...)
 			if loud(pcm) {
@@ -293,11 +322,18 @@ func (e *Engine) sayAloudContext(parent context.Context, s Settings, p Profile, 
 			stop := e.aborted
 			e.mu.Unlock()
 			if stop { // «Стоп» из настроек или позвали Алису
-				e.player.Stop(true)
-				return rec, nil
+				if started {
+					e.player.Stop(true)
+				}
+				return rec, errVoiceInterrupted
 			}
 		case <-ctx.Done():
-			e.player.Stop(true)
+			if started {
+				e.player.Stop(true)
+			}
+			if errors.Is(parent.Err(), context.Canceled) {
+				return nil, errVoiceInterrupted
+			}
 			return nil, errors.New("голос не успел прозвучать")
 		}
 	}
@@ -315,7 +351,10 @@ func askCodex(ctx context.Context, client *http.Client, a ChatGPTAuth, p Profile
 		model = BackendModels[0]
 	}
 	effort := normalizedModelEffort(model, p.Effort)
-	defs := append([]any{}, tools.Definitions()...)
+	defs := []any{}
+	if tools != nil { // nil — просто текст, без инструментов (конспект памяти)
+		defs = append(defs, tools.Definitions()...)
+	}
 	if p.WebSearch {
 		defs = append(defs, map[string]any{"type": "web_search"})
 	}
@@ -380,6 +419,9 @@ func askCodex(ctx context.Context, client *http.Client, a ChatGPTAuth, p Profile
 				return s, nil
 			}
 			return "", errors.New("модель ничего не ответила")
+		}
+		if tools == nil {
+			return "", errors.New("модель попросила инструмент, которого нет")
 		}
 		for _, item := range calls {
 			tctx, cancel := context.WithTimeout(ctx, 15*time.Second)

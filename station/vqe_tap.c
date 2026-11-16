@@ -14,6 +14,8 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,12 +31,35 @@ static int ready;
 static struct sockaddr_un dest;
 static socklen_t dest_len;
 static float gain = 1.0f;
+static unsigned int want_kind = 6, want_index = 0; /* JARVIS_MIC_CHANNEL="6:0" — другой канал на другой прошивке */
+static char seen_path[sizeof(((struct sockaddr_un *)0)->sun_path) + 8];
+static unsigned char seen[16][8];
+
+/* note_channel — какие каналы VQE вообще приходят: по строке на каждую новую пару в <сокет>.seen.
+ * Пишется редко (только новая пара, их единицы) — для самодиагностики jarvisd на незнакомых прошивках. */
+static void note_channel(unsigned int kind, unsigned int index, size_t frames) {
+    if (!seen_path[0] || kind >= 16 || index >= 8 || seen[kind][index]) return;
+    seen[kind][index] = 1;
+    int fd = open(seen_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+    if (fd < 0) return;
+    char line[64];
+    int n = snprintf(line, sizeof line, "%u %u %u\n", kind, index, (unsigned int)frames);
+    if (n > 0) (void)write(fd, line, (size_t)n);
+    close(fd);
+}
 
 static void setup(void) {
     ready = 1;
     const char *path = getenv("JARVIS_MIC_SOCKET");
     if (!path || !*path) path = getenv("ALICE_CAPTURE_SOCKET");
     if (!path || !*path || strlen(path) >= sizeof dest.sun_path) return;
+    const char *ch = getenv("JARVIS_MIC_CHANNEL");
+    if (ch && *ch) {
+        unsigned int k, i;
+        if (sscanf(ch, "%u:%u", &k, &i) == 2) want_kind = k, want_index = i;
+    }
+    snprintf(seen_path, sizeof seen_path, "%s.seen", path);
+    unlink(seen_path);
     const char *g = getenv("JARVIS_MIC_GAIN");
     if (g && *g) {
         float v = strtof(g, NULL);
@@ -66,8 +91,11 @@ void *YandexVqeC_GetOutputChannelData(void *engine, unsigned int kind, unsigned 
     void *err = real_output(engine, kind, index, data, frames);
     saved = errno;
 
-    if (!err && kind == 6 && index == 0 && data && *data && frames && *frames > 0 && *frames <= 4096) {
+    if (!err && data && *data && frames && *frames > 0 && *frames <= 4096) {
         if (!ready) setup();
+        note_channel(kind, index, *frames);
+    }
+    if (!err && kind == want_kind && index == want_index && data && *data && frames && *frames > 0 && *frames <= 4096) {
         if (sock >= 0) {
             short pkt[160]; /* 10 мс моно 16 кГц */
             size_t n = *frames;

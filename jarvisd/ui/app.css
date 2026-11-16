@@ -475,7 +475,12 @@ details.mini { display: grid; gap: 8px; }
 
 /* ---------- ответ «печатается» (Streaming reply) ---------- */
 .b.growing { overflow: hidden; position: relative; }
+.tg-body { overflow-anchor: none; }   /* за растущим ответом следим сами — браузерная «якорная» прокрутка только дёргала бы окно */
+.tg-body > * { flex-shrink: 0; }   /* пузырь с overflow: hidden колонка иначе сжимает до 16 px — растущий ответ уходил за край */
 .b .wd { display: inline-block; will-change: transform, opacity, filter; }
+.b.ans .m { flex-basis: 100%; justify-content: flex-end; }   /* подпись ответа всегда своей строкой: пока ответ печатается, она не прыгает между строками */
+.b.ans.growing { padding-bottom: 24px; }   /* 8 + строка подписи 16 — та же высота, что и в покое */
+.b.ans.growing .m { position: absolute; right: 12px; bottom: 8px; }
 .b.think { padding: 8px 14px; }
 .think-t { font-weight: 500; background: linear-gradient(90deg, var(--fg3) 20%, var(--fg) 50%, var(--fg3) 80%) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 1.4s linear infinite; }
 @keyframes shine { to { background-position: -200% 0; } }
@@ -1408,3 +1413,7 @@ h1 { font-size: 34px; line-height: 40px; }
 /* умный дом: канал не подключён — галочка недоступна */
 .sw.hu.off { opacity: .6; }
 .sw.hu.off input, .sw.hu.off .tr { cursor: not-allowed; }
+
+/* конспект памяти Джарвиса: как написала модель, с переносами строк */
+.mem-sum { white-space: pre-wrap; font-size: 13px; line-height: 1.55; margin-top: 8px; }
+.mem-m { margin: 12px 0 0; font-size: 13px; } .mem-m small { opacity: .6; font-weight: 400; }

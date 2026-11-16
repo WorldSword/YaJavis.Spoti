@@ -341,12 +341,12 @@ func (s *ChatGPTSession) delegate(id, task string) {
 // withHistory — голосовая модель передаёт бэкенду только последнюю фразу («ну в Москве посмотри»),
 // поэтому добавляем ход разговора за последние полчаса: без него бэкенд не понимает, о чём речь.
 func (s *ChatGPTSession) withHistory(task string) string {
-	if chatgptChat != nil { // общий чат: весь недавний разговор, а не только последние полчаса
-		lines := chatLines(chatgptChat.Recent(4000))
-		if len(lines) == 0 {
+	if chatgptChat.Enabled() { // общий чат: весь недавний разговор, а не только последние полчаса
+		mem := chatgptChat.Transcript(4000)
+		if mem == "" {
 			return task
 		}
-		return "Разговор до этого (для контекста):\n" + strings.Join(lines, "\n") +
+		return "Разговор до этого (для контекста; что было раньше — ищи инструментом recall_conversation):\n" + mem +
 			"\n\nЗадача от голосового ассистента — выполни её с учётом разговора выше: " + task
 	}
 	items := s.journal.Items(16)

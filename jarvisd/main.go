@@ -488,6 +488,20 @@ func main() {
 		sess.Close()
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "diag-mic" { // почему нет микрофона — прислать вывод разработчику
+		dir := "/data/opt/jarvisd"
+		if len(os.Args) > 2 {
+			dir = os.Args[2]
+		}
+		why, lines := micDiagnose(nil, dir)
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		if why == "" {
+			fmt.Println("✓ цепочка микрофона цела")
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "version" {
 		fmt.Println(version)
 		return
@@ -518,6 +532,8 @@ func main() {
 	}
 	journal := &Journal{}
 	chatgptChat = LoadChatThread(filepath.Join(*dataDir, "chatgpt-chat.json"))
+	chatgptChat.SetClock(func() time.Time { s := store.Get(); return s.Now() })
+	chatgptChat.SetEnabled(func() bool { return !store.Get().Memory.Off })
 	loadGeminiSpent(filepath.Join(*dataDir, "gemini-spent.json"))
 	geminiKeyList = func() []string { return store.Get().GeminiKeys }
 	journal.OnRemember = func(t Turn) {
@@ -536,11 +552,13 @@ func main() {
 	tools.SmartLife = &SmartLife{store: store, dataDir: *dataDir, lan: tuyaLAN, client: func() *http.Client { return proxy.ClientFor("smartlife", 30*time.Second) }}
 	tools.Use = func(ch string) bool { s := store.Get(); return s.UseHome(ch) }
 	tools.Room = func() string { return store.Get().SpeakerRoom }
+	tools.Recall = chatgptChat.Search
+	tools.MemoryEdit = chatgptChat.EditMemory
 	go tuyaLAN.Listen(func() bool { return store.Get().Tuya.SignedIn() })
 	mic := NewMic(*micSock)
 	mic.GainDB = func() int { return store.Flags().MicGainDB }
 	go mic.Run()
-	go WatchAliceMic(mic) // Midi/Mini: Алиса стартует раньше S98jarvisd — без перезапуска микрофона нет
+	go WatchAliceMic(mic, *dataDir) // Midi/Mini: Алиса стартует раньше S98jarvisd — без перезапуска микрофона нет
 	player := NewPlayer()
 	player.Volume = func() int { s := store.Get(); return s.VoiceVolume() }
 	player.Trim = func() float64 { return voiceTrim(speakerLevel()) }
@@ -558,6 +576,7 @@ func main() {
 	engine.stt = NewSTT(func() string { return store.Get().OpenAIKey }, func() *http.Client { return proxy.ClientFor("openai", 0) })
 	engine.cmds = NewCmdSpotter(*dataDir, engine.onCommand)
 	voiceTestHook = engine.VoiceTest
+	chatgptChat.SetSummarizer(engine.summarize)
 	engine.train.cloud = engine.bg.drive // старые записи для обучения — на тот же Google Диск, что и фон
 	// музыка с YouTube: «Джарвис, включи с ютуба …»
 	musicClient := &http.Client{Timeout: 60 * time.Second, Transport: proxy.TransportFor("youtube")}
