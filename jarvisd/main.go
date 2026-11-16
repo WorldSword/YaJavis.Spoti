@@ -702,7 +702,7 @@ func main() {
 	_ = os.Remove(updateNext + ".part")
 	go updater.Run()
 	if inst := engine.spotify.Installer(); inst != nil { // Soloist ставится кнопкой из панели; после установки перезапускаемся и подхватываем его
-		inst.get = updater.get
+		inst.Get = updater.get
 		inst.OnDone = func() { time.Sleep(2 * time.Second); restartSoon() }
 	}
 	go RunCounter(store, func() *http.Client { return updaterClient }, *dataDir)

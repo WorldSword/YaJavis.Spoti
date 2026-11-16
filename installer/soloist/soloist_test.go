@@ -1,4 +1,4 @@
-package main
+package soloist
 
 import (
 	"archive/tar"
@@ -17,6 +17,11 @@ import (
 	"testing"
 	"time"
 )
+
+type call struct {
+	name string
+	args []string
+}
 
 type tarEntry struct {
 	name, body, link string
@@ -112,16 +117,16 @@ func releaseServer(t *testing.T, archive []byte, digest string) *httptest.Server
 	return srv
 }
 
-func testInstaller(t *testing.T, srv *httptest.Server, _ string, run spotifyExec) *SoloistInstaller {
+func testInstaller(t *testing.T, srv *httptest.Server, _ string, run Exec) *Installer {
 	t.Helper()
-	i := newSoloistInstaller(run)
-	i.api = srv.URL + "/repos/Horohi/soloist-station-lite/releases/latest"
-	i.tmp = t.TempDir()
-	i.get = func(ctx context.Context, url string) (*http.Response, error) { return srv.Client().Get(url) }
+	i := New(run, "test")
+	i.API = srv.URL + "/repos/Horohi/soloist-station-lite/releases/latest"
+	i.Tmp = t.TempDir()
+	i.Get = func(ctx context.Context, url string) (*http.Response, error) { return srv.Client().Get(url) }
 	return i
 }
 
-func waitInstall(t *testing.T, i *SoloistInstaller) map[string]any {
+func waitInstall(t *testing.T, i *Installer) map[string]any {
 	t.Helper()
 	for n := 0; n < 200; n++ {
 		if s := i.Status(); s["state"] != "running" {
@@ -145,16 +150,16 @@ func TestSoloistInstallRuns(t *testing.T) {
 	sum := sha256.Sum256(arch)
 	srv := releaseServer(t, arch, "sha256:"+hex.EncodeToString(sum[:]))
 	var mu sync.Mutex
-	var calls []spotifyCall
+	var calls []call
 	i := testInstaller(t, srv, "arm64", func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		mu.Lock()
-		calls = append(calls, spotifyCall{name, args})
+		calls = append(calls, call{name, args})
 		mu.Unlock()
 		return nil, nil
 	})
 	done := make(chan struct{})
 	i.OnDone = func() { close(done) }
-	if err := i.Start(soloistInstallOpts{APIKey: "spak_abc", DeviceName: "Станция", ClientID: "cid", ClientSecret: "sec"}); err != nil {
+	if err := i.Start(Opts{APIKey: "spak_abc", DeviceName: "Станция", ClientID: "cid", ClientSecret: "sec"}); err != nil {
 		t.Fatal(err)
 	}
 	if s := waitInstall(t, i); s["state"] != "done" {
@@ -185,7 +190,7 @@ func TestSoloistInstallBadDigest(t *testing.T) {
 	srv := releaseServer(t, goodArchive(t), "sha256:"+strings.Repeat("0", 64))
 	ran := false
 	i := testInstaller(t, srv, "arm64", func(ctx context.Context, name string, args ...string) ([]byte, error) { ran = true; return nil, nil })
-	if err := i.Start(soloistInstallOpts{APIKey: "spak_abc"}); err != nil {
+	if err := i.Start(Opts{APIKey: "spak_abc"}); err != nil {
 		t.Fatal(err)
 	}
 	s := waitInstall(t, i)
@@ -196,8 +201,8 @@ func TestSoloistInstallBadDigest(t *testing.T) {
 
 func TestSoloistInstallValidatesInput(t *testing.T) {
 	srv := releaseServer(t, goodArchive(t), "")
-	i := testInstaller(t, srv, "arm64", fakeSpotifyExec(&[]spotifyCall{}))
-	for _, o := range []soloistInstallOpts{
+	i := testInstaller(t, srv, "arm64", func(ctx context.Context, name string, args ...string) ([]byte, error) { return nil, nil })
+	for _, o := range []Opts{
 		{},
 		{APIKey: "a$(reboot)"},
 		{APIKey: "spak_abc", DeviceName: "x\"y"},
@@ -215,43 +220,9 @@ func TestSoloistInstallInstallScriptFails(t *testing.T) {
 		_ = os.WriteFile(args[len(args)-1], []byte("ERROR: Недостаточно места в /data"), 0o644)
 		return nil, os.ErrInvalid
 	})
-	_ = i.Start(soloistInstallOpts{APIKey: "spak_abc"})
+	_ = i.Start(Opts{APIKey: "spak_abc"})
 	s := waitInstall(t, i)
 	if s["state"] != "error" || !strings.Contains(s["error"].(string), "Недостаточно места") {
 		t.Errorf("в ошибке должен быть вывод install.sh: %v", s)
-	}
-}
-
-func TestPostSpotifyInstall(t *testing.T) {
-	w := spotifyWeb(t, "", nil)
-	srv := releaseServer(t, goodArchive(t), "")
-	w.engine.spotify.inst = testInstaller(t, srv, "arm64", func(ctx context.Context, name string, args ...string) ([]byte, error) { return nil, nil })
-	post := func(body string) *httptest.ResponseRecorder {
-		rec := httptest.NewRecorder()
-		w.spotifyInstall(rec, httptest.NewRequest(http.MethodPost, "/api/spotify/install", strings.NewReader(body)))
-		return rec
-	}
-	if rec := post(`{"api_key":""}`); rec.Code != 400 {
-		t.Errorf("пустой ключ: код %d", rec.Code)
-	}
-	if rec := post(`{"api_key":"a$b"}`); rec.Code != 400 {
-		t.Errorf("опасный ключ: код %d", rec.Code)
-	}
-	if rec := post(`{"api_key":"spak_abc"}`); rec.Code != 202 {
-		t.Fatalf("корректный запрос: код %d: %s", rec.Code, rec.Body)
-	}
-	st := w.spotifyState()
-	if st["installed"] != false || st["install"] == nil {
-		t.Errorf("состояние без Soloist должно содержать install: %v", st)
-	}
-	waitInstall(t, w.engine.spotify.inst)
-}
-
-func TestPostSpotifyInstallAlreadyInstalled(t *testing.T) {
-	w := spotifyWeb(t, fakeSoloistRoot(t), fakeSpotifyExec(&[]spotifyCall{}))
-	rec := httptest.NewRecorder()
-	w.spotifyInstall(rec, httptest.NewRequest(http.MethodPost, "/api/spotify/install", strings.NewReader(`{"api_key":"spak_abc"}`)))
-	if rec.Code != 409 {
-		t.Errorf("Soloist уже стоит: код %d, ждали 409", rec.Code)
 	}
 }

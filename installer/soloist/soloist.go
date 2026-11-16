@@ -1,4 +1,6 @@
-package main
+// Package soloist ставит Soloist на колонку: качает официальный релиз с GitHub автора и запускает его install.sh.
+// Лежит рядом с остальными установщиками (installer/), а jarvisd подключает его кнопкой в панели.
+package soloist
 
 import (
 	"archive/tar"
@@ -22,20 +24,24 @@ import (
 // Установка Soloist с GitHub автора (Horohi/soloist-station-lite). Движок Soloist принадлежит Spotify AB
 // и не входит в YaJavis: мы только скачиваем официальный релиз по нажатию кнопки и запускаем его install.sh.
 const (
-	soloistRepoAPI      = "https://api.github.com/repos/Horohi/soloist-station-lite/releases/latest"
-	soloistArchiveName  = "soloist-station-lite.tar.gz"
-	soloistMaxDownload  = 150 << 20
-	soloistMaxExtracted = 400 << 20
+	repoAPI      = "https://api.github.com/repos/Horohi/soloist-station-lite/releases/latest"
+	archiveName  = "soloist-station-lite.tar.gz"
+	maxDownload  = 150 << 20
+	maxExtracted = 400 << 20
 )
 
-type soloistInstallOpts struct{ APIKey, DeviceName, ClientID, ClientSecret string }
+// Exec запускает команду на колонке и возвращает её вывод.
+type Exec func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-type SoloistInstaller struct {
-	api    string
-	tmp    string
-	get    func(ctx context.Context, url string) (*http.Response, error)
-	run    spotifyExec
-	OnDone func() // установка удалась: Джарвис перезапускается, чтобы подхватить Soloist
+// Opts — что спросить у человека перед установкой.
+type Opts struct{ APIKey, DeviceName, ClientID, ClientSecret string }
+
+type Installer struct {
+	API    string
+	Tmp    string
+	Get    func(ctx context.Context, url string) (*http.Response, error)
+	Run    Exec
+	OnDone func() // установка удалась: хозяин перезапускается, чтобы подхватить Soloist
 
 	mu    sync.Mutex
 	state string // "" | running | done | error
@@ -43,15 +49,16 @@ type SoloistInstaller struct {
 	err   string
 }
 
-func newSoloistInstaller(run spotifyExec) *SoloistInstaller {
+// New готовит установщик. userAgent уходит в заголовок запросов к GitHub.
+func New(run Exec, userAgent string) *Installer {
 	tmp := "/data/local/tmp"
 	if st, err := os.Stat(tmp); err != nil || !st.IsDir() {
 		tmp = os.TempDir()
 	}
-	return &SoloistInstaller{api: soloistRepoAPI, tmp: tmp, run: run,
-		get: func(ctx context.Context, url string) (*http.Response, error) {
+	return &Installer{API: repoAPI, Tmp: tmp, Run: run,
+		Get: func(ctx context.Context, url string) (*http.Response, error) {
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			req.Header.Set("User-Agent", "jarvisd/"+version)
+			req.Header.Set("User-Agent", userAgent)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				return nil, err
@@ -64,7 +71,7 @@ func newSoloistInstaller(run spotifyExec) *SoloistInstaller {
 		}}
 }
 
-func (i *SoloistInstaller) Status() map[string]any {
+func (i *Installer) Status() map[string]any {
 	if i == nil {
 		return map[string]any{"state": ""}
 	}
@@ -73,22 +80,22 @@ func (i *SoloistInstaller) Status() map[string]any {
 	return map[string]any{"state": i.state, "step": i.step, "error": i.err}
 }
 
-func (i *SoloistInstaller) setStep(s string) {
+func (i *Installer) setStep(s string) {
 	i.mu.Lock()
 	i.step = s
 	i.mu.Unlock()
 }
 
 // Start проверяет вход и запускает установку в фоне.
-func (i *SoloistInstaller) Start(o soloistInstallOpts) error {
-	if i == nil || i.run == nil {
+func (i *Installer) Start(o Opts) error {
+	if i == nil || i.Run == nil {
 		return errors.New("установка недоступна")
 	}
 	if o.APIKey == "" {
 		return errors.New("нужен API-ключ Soloist")
 	}
 	for _, v := range []string{o.APIKey, o.DeviceName, o.ClientID, o.ClientSecret} {
-		if !validSoloistValue(v) {
+		if !ValidValue(v) {
 			return errors.New("недопустимые символы в настройках")
 		}
 	}
@@ -119,8 +126,8 @@ func (i *SoloistInstaller) Start(o soloistInstallOpts) error {
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
-func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) error {
-	resp, err := i.get(ctx, i.api)
+func (i *Installer) install(ctx context.Context, o Opts) error {
+	resp, err := i.Get(ctx, i.API)
 	if err != nil {
 		return fmt.Errorf("не удалось получить релиз Soloist: %w", err)
 	}
@@ -139,22 +146,22 @@ func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) er
 	}
 	url, digest := "", ""
 	for _, a := range rel.Assets {
-		if a.Name == soloistArchiveName {
+		if a.Name == archiveName {
 			url, digest = a.URL, a.Digest
 			break
 		}
 	}
 	if url == "" {
-		return fmt.Errorf("в релизе %s нет файла %s", rel.Tag, soloistArchiveName)
+		return fmt.Errorf("в релизе %s нет файла %s", rel.Tag, archiveName)
 	}
 
-	work, err := os.MkdirTemp(i.tmp, "soloist-install-")
+	work, err := os.MkdirTemp(i.Tmp, "soloist-install-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(work)
 	i.setStep("скачиваю Soloist " + rel.Tag)
-	archive := filepath.Join(work, soloistArchiveName)
+	archive := filepath.Join(work, archiveName)
 	sum, err := i.download(ctx, url, archive)
 	if err != nil {
 		return err
@@ -169,7 +176,7 @@ func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) er
 		return err
 	}
 	src := filepath.Join(work, "src")
-	err = extractTarGz(f, src, soloistMaxExtracted)
+	err = extractTarGz(f, src, maxExtracted)
 	f.Close()
 	if err != nil {
 		return fmt.Errorf("архив Soloist не распаковался: %w", err)
@@ -188,7 +195,7 @@ func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) er
 	// и без этого мы ждали бы конца службы, а не конца установки.
 	logPath := filepath.Join(work, "install.log")
 	const script = `cd "$1" && { printf '%s\n%s\n' "$4" "$5"; yes ''; } | sh ./install.sh "$2" "$3" >"$6" 2>&1`
-	_, err = i.run(rctx, "sh", "-c", script, "sh", dir, o.APIKey, o.DeviceName, o.ClientID, o.ClientSecret, logPath)
+	_, err = i.Run(rctx, "sh", "-c", script, "sh", dir, o.APIKey, o.DeviceName, o.ClientID, o.ClientSecret, logPath)
 	if err != nil {
 		raw, _ := os.ReadFile(logPath)
 		tail := strings.TrimSpace(ansiRe.ReplaceAllString(string(raw), ""))
@@ -204,8 +211,8 @@ func (i *SoloistInstaller) install(ctx context.Context, o soloistInstallOpts) er
 }
 
 // download сохраняет файл и возвращает SHA-256 в hex.
-func (i *SoloistInstaller) download(ctx context.Context, url, dst string) (string, error) {
-	resp, err := i.get(ctx, url)
+func (i *Installer) download(ctx context.Context, url, dst string) (string, error) {
+	resp, err := i.Get(ctx, url)
 	if err != nil {
 		return "", fmt.Errorf("не удалось скачать Soloist: %w", err)
 	}
@@ -216,11 +223,11 @@ func (i *SoloistInstaller) download(ctx context.Context, url, dst string) (strin
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, soloistMaxDownload+1))
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, maxDownload+1))
 	if err != nil {
 		return "", fmt.Errorf("загрузка прервалась: %w", err)
 	}
-	if n > soloistMaxDownload {
+	if n > maxDownload {
 		return "", errors.New("архив слишком большой")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -317,4 +324,17 @@ func extractTarGz(r io.Reader, dst string, maxBytes int64) error {
 		default: // жёсткие ссылки, устройства и прочее нам не нужны
 		}
 	}
+}
+
+// ValidValue — файлы настроек читает sh, поэтому в значении нет ни кавычек, ни подстановок, ни переводов строк.
+func ValidValue(v string) bool {
+	if len(v) > 200 {
+		return false
+	}
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune("\"\\$`", r) {
+			return false
+		}
+	}
+	return true
 }

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/newfpv/YaJavis/installer/soloist"
 	"io"
 	"log"
 	"net/http"
@@ -45,17 +46,7 @@ func parseSoloistEnv(b []byte) map[string]string {
 }
 
 // validSoloistValue — файлы читает sh, поэтому в значении нет ни кавычек, ни подстановок, ни переводов строк.
-func validSoloistValue(v string) bool {
-	if len(v) > 200 {
-		return false
-	}
-	for _, r := range v {
-		if r < 0x20 || r == 0x7f || strings.ContainsRune("\"\\$`", r) {
-			return false
-		}
-	}
-	return true
-}
+func validSoloistValue(v string) bool { return soloist.ValidValue(v) }
 
 type spotifyConfigUpdate struct{ APIKey, DeviceName, ClientID, ClientSecret *string }
 
@@ -238,7 +229,7 @@ func (w *Web) spotifyInstall(rw http.ResponseWriter, r *http.Request) {
 		bad(rw, "не понял запрос")
 		return
 	}
-	o := soloistInstallOpts{strings.TrimSpace(req.APIKey), strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret)}
+	o := soloist.Opts{APIKey: strings.TrimSpace(req.APIKey), DeviceName: strings.TrimSpace(req.DeviceName), ClientID: strings.TrimSpace(req.ClientID), ClientSecret: strings.TrimSpace(req.ClientSecret)}
 	if err := sp.Installer().Start(o); err != nil {
 		bad(rw, err.Error())
 		return

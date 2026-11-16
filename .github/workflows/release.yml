@@ -23,6 +23,7 @@ jobs:
         run: |
           (cd jarvisd && go test ./...)
           (cd hardware && go test ./...)
+          (cd installer/soloist && go test ./...)
           node --check jarvisd/ui/app.js
           node --check installer/ui/setup.js
       - name: Check concurrency regressions

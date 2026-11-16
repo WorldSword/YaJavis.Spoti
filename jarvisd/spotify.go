@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/newfpv/YaJavis/installer/soloist"
 	"log"
 	"os"
 	"os/exec"
@@ -27,7 +28,7 @@ type Spotify struct {
 	exec   spotifyExec
 	clock  func() time.Time
 	poll   time.Duration // как часто Run спрашивает Soloist, что играет
-	inst   *SoloistInstaller
+	inst   *soloist.Installer
 	OnPlay func() // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
 
 	mu     sync.Mutex
@@ -48,7 +49,7 @@ func NewSpotify() *Spotify {
 }
 
 func newSpotifyAt(root string, exec spotifyExec) *Spotify {
-	return &Spotify{root: root, exec: exec, clock: time.Now, poll: 2 * time.Second, inst: newSoloistInstaller(exec)}
+	return &Spotify{root: root, exec: exec, clock: time.Now, poll: 2 * time.Second, inst: soloist.New(soloist.Exec(exec), "jarvisd/"+version)}
 }
 
 // findSoloistRoot — первая папка, где лежит scripts/control.sh Soloist; пусто, если Soloist не найден.
@@ -86,7 +87,7 @@ func (s *Spotify) Restart(ctx context.Context) error {
 }
 
 // Installer — установка Soloist из панели; у nil-Spotify его нет.
-func (s *Spotify) Installer() *SoloistInstaller {
+func (s *Spotify) Installer() *soloist.Installer {
 	if s == nil {
 		return nil
 	}
