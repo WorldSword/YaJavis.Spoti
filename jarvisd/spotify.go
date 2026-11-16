@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -105,8 +107,29 @@ func (s *Spotify) control(ctx context.Context, args ...string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	_, err := s.exec(ctx, "sh", append([]string{path.Join(s.root, "scripts", "control.sh")}, args...)...)
+	out, err := s.exec(ctx, "sh", append([]string{path.Join(s.root, "scripts", "control.sh")}, args...)...)
+	if err != nil {
+		if last := lastLine(out); last != "" {
+			log.Printf("spotify: %v; вывод Soloist: %s", err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("%w (%s)", err, last)
+		}
+	}
 	return err
+}
+
+func lastLine(b []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	l := strings.TrimSpace(lines[len(lines)-1])
+	if r := []rune(l); len(r) > 160 {
+		l = string(r[:160]) + "…"
+	}
+	return l
+}
+
+// searchKeysSet — есть ли у Soloist Client ID и Secret: без них его голосовой поиск не работает.
+func (s *Spotify) searchKeysSet() bool {
+	_, api := soloistSettings(s)
+	return api["SPOTIFY_CLIENT_ID"] != "" && api["SPOTIFY_CLIENT_SECRET"] != ""
 }
 
 // Play — найти трек в Spotify и включить. Запрос уходит одним аргументом, без оболочки.
@@ -114,6 +137,9 @@ func (s *Spotify) Play(ctx context.Context, query string) error {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return errors.New("что включить?")
+	}
+	if s.Installed() && !s.searchKeysSet() {
+		return errors.New("для поиска в Spotify голосом нужны Client ID и Secret: добавьте их в панели, Подключения → Spotify")
 	}
 	if err := s.control(ctx, "search", query); err != nil {
 		return err

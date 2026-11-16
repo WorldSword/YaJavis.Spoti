@@ -43,7 +43,8 @@ func TestSpotifyRequest(t *testing.T) {
 
 func TestSpotifyPlayArgv(t *testing.T) {
 	var calls []spotifyCall
-	s := newSpotifyAt("/opt/soloist", fakeSpotifyExec(&calls))
+	root := fakeSoloistRoot(t)
+	s := newSpotifyAt(root, fakeSpotifyExec(&calls))
 	query := "Don't Stop; rm -rf /"
 	if err := s.Play(context.Background(), query); err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func TestSpotifyPlayArgv(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("вызовов %d, ждали 1", len(calls))
 	}
-	want := spotifyCall{"sh", []string{"/opt/soloist/scripts/control.sh", "search", query}}
+	want := spotifyCall{"sh", []string{root + "/scripts/control.sh", "search", query}}
 	if !reflect.DeepEqual(calls[0], want) {
 		t.Errorf("вызов %+v, ждали %+v", calls[0], want)
 	}
@@ -59,7 +60,7 @@ func TestSpotifyPlayArgv(t *testing.T) {
 
 func TestSpotifyPlayEmpty(t *testing.T) {
 	var calls []spotifyCall
-	s := newSpotifyAt("/opt/soloist", fakeSpotifyExec(&calls))
+	s := newSpotifyAt(fakeSoloistRoot(t), fakeSpotifyExec(&calls))
 	if err := s.Play(context.Background(), "  "); err == nil {
 		t.Error("пустой запрос должен вернуть ошибку")
 	}
@@ -81,7 +82,7 @@ func TestSpotifyControlMapping(t *testing.T) {
 		}
 	}
 	var calls []spotifyCall
-	s := newSpotifyAt("/opt/soloist", fakeSpotifyExec(&calls))
+	s := newSpotifyAt(fakeSoloistRoot(t), fakeSpotifyExec(&calls))
 	if err := s.Control(context.Background(), "explode"); err == nil {
 		t.Error("неизвестное действие должно вернуть ошибку")
 	}
@@ -115,7 +116,7 @@ func TestFindSoloistRoot(t *testing.T) {
 func TestSpotifyOnPlay(t *testing.T) {
 	ctx := context.Background()
 	var calls []spotifyCall
-	s := newSpotifyAt("/opt/soloist", fakeSpotifyExec(&calls))
+	s := newSpotifyAt(fakeSoloistRoot(t), fakeSpotifyExec(&calls))
 	n := 0
 	s.OnPlay = func() { n++ }
 	if err := s.Play(ctx, "Кино"); err != nil {

@@ -22,6 +22,9 @@ func fakeSoloistRoot(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "scripts", "control.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "spotify_api.conf"), []byte("SPOTIFY_CLIENT_ID=\"testid\"\nSPOTIFY_CLIENT_SECRET=\"testsecret\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	return root
 }
 
@@ -152,8 +155,8 @@ func TestPutSpotifyRejectsShellChars(t *testing.T) {
 		if got := readFile(t, p); got != old {
 			t.Errorf("%q: файл изменён: %q", v, got)
 		}
-		if _, err := os.Stat(filepath.Join(root, "spotify_api.conf")); err == nil {
-			t.Errorf("%q: появился spotify_api.conf", v)
+		if got := readFile(t, filepath.Join(root, "spotify_api.conf")); !strings.Contains(got, `"testid"`) || strings.Contains(got, "Ок") {
+			t.Errorf("%q: spotify_api.conf изменён: %q", v, got)
 		}
 	}
 }
