@@ -734,7 +734,11 @@ function connDefs() {
           <div class="f"><label for="sp-cid">Client ID</label><input id="sp-cid" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_id || "")}"></div>
           <div class="f"><label for="sp-sec">Client Secret</label><input id="sp-sec" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_secret || "")}"></div></details>
         <div class="row"><button class="btn primary" id="sp-save">Сохранить</button><button class="btn" id="sp-restart">Перезапустить Soloist</button></div>
-        <p class="note">Ключ API работает только с Spotify Premium. Soloist перезапускается сам после «Сохранить».</p>`,
+        <div class="row"><button class="btn" id="sp-tune"${sp.yam ? " disabled" : ""}>Настроить звук</button></div>
+        ${sp.tune?.state === "running" ? `<p class="note">Подбираю звук: ${esc(sp.tune.step || "…")}. Музыка на это время замолчит, это займёт около двух минут.</p>`
+          : sp.tune?.state === "done" ? `<p class="note">Звук настроен: ${esc(sp.tune.device)}.</p>`
+          : sp.tune?.state === "error" ? `<p class="err">${esc(sp.tune.error || "Звук настроить не удалось")}</p>` : ""}
+        <p class="note">Ключ API работает только с Spotify Premium. Soloist перезапускается сам после «Сохранить». Нет звука при играющей музыке? Сначала привяжите Soloist к Spotify (выберите колонку в приложении Spotify), потом нажмите «Настроить звук»${sp.yam ? "; для установки через YAM кнопка не нужна" : ""}.</p>`,
       drop: "" },
     { id: "vpn", group: "net", icon: "shield", name: "VPN для Джарвиса", about: "Через VPN идёт только сам Джарвис, Алиса — всегда напрямую. Что именно пускать через VPN — галочки ниже",
       on: !!v.set && !v.error, bad: !!v.error, need: !v.set, state: v.set ? (v.error ? "ошибка" : esc(v.name || v.host)) : "не задан",
@@ -960,6 +964,16 @@ async function connClick(e) {
         if (r?.restart_error) throw new Error(r.restart_error);
       }, "Сохранено, Soloist перезапущен");
     }
+    case "sp-tune": return act(btn, async () => {
+      await api("POST", "/api/spotify/tune");
+      for (let n = 0; n < 180; n++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try { await redraw(); } catch (e) { continue; }
+        if (S.spotify?.tune?.state !== "running") break;
+      }
+      if (S.spotify?.tune?.state === "error") throw new Error(S.spotify.tune.error || "Звук настроить не удалось");
+      if (S.spotify?.tune?.state === "running") throw new Error("Подбор ещё идёт — посмотрите карточку позже");
+    }, "Звук настроен");
     case "sp-restart": return act(btn, async () => { await api("POST", "/api/spotify/restart"); await redraw(); }, "Soloist перезапускается");
     case "vless-save": return act(btn, async () => { await api("PUT", "/api/vless", { link: $("#vless").value }); $("#vless").value = ""; await redraw(); }, "Ссылка сохранена — проверьте связь");
     case "vless-clear": if (confirm("Убрать VPN? Колонка пойдёт в интернет напрямую.")) act(btn, async () => { await api("PUT", "/api/vless", { link: "" }); await redraw(); }); return;

@@ -124,7 +124,7 @@ func (w *Web) spotifyState() map[string]any {
 	}
 	env, api := soloistSettings(sp)
 	_, yam := yamRootOf(sp.Root())
-	return map[string]any{"installed": true, "running": sp.Running(), "playing": sp.Playing(), "root": sp.Root(), "yam": yam,
+	return map[string]any{"installed": true, "running": sp.Running(), "playing": sp.Playing(), "root": sp.Root(), "yam": yam, "tune": sp.Tuner().Status(),
 		"device_name": env["DEVICE_NAME"], "api_key": mask(env["API_KEY"]),
 		"client_id": mask(api["SPOTIFY_CLIENT_ID"]), "client_secret": mask(api["SPOTIFY_CLIENT_SECRET"])}
 }
@@ -209,6 +209,24 @@ func (w *Web) spotifyRestart(rw http.ResponseWriter, r *http.Request) {
 }
 
 // spotifyInstall — «Установить Soloist»: скачать официальный релиз и запустить его install.sh на колонке.
+// spotifyTune — «Настроить звук»: подобрать для этой колонки рабочее устройство вывода и записать его в скрипты запуска.
+func (w *Web) spotifyTune(rw http.ResponseWriter, r *http.Request) {
+	sp := w.spotifySoloist()
+	if !sp.Installed() {
+		bad(rw, "Soloist не найден на колонке")
+		return
+	}
+	if _, yam := yamRootOf(sp.Root()); yam {
+		bad(rw, "Soloist стоит через YAM: звук настраивается там")
+		return
+	}
+	if err := sp.Tuner().Start(); err != nil {
+		bad(rw, err.Error())
+		return
+	}
+	writeJSON(rw, 202, map[string]any{"ok": true})
+}
+
 func (w *Web) spotifyInstall(rw http.ResponseWriter, r *http.Request) {
 	sp := w.spotifySoloist()
 	if sp == nil {

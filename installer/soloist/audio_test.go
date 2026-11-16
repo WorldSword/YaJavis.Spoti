@@ -32,9 +32,8 @@ func writeService(t *testing.T, body string) (dir, file string) {
 	return dir, file
 }
 
-// Станция 2: через plug:default Soloist не открывает устройство (No such device or address),
-// а sysdefault:CARD=<карта> работает. Перед установкой правим служебный скрипт.
-func TestPatchAudioDevice(t *testing.T) {
+// Установщик не меняет поведение апстрима, а только обводит строку устройства метками для Tuner.
+func TestPatchAudioDeviceAddsMarks(t *testing.T) {
 	dir, file := writeService(t, serviceFixture)
 	changed, err := patchAudioDevice(dir)
 	if err != nil || !changed {
@@ -42,17 +41,16 @@ func TestPatchAudioDevice(t *testing.T) {
 	}
 	b, _ := os.ReadFile(file)
 	s := string(b)
-	if strings.Count(s, "plug:default") != 1 || !strings.Contains(s, `sysdefault:CARD=$CARD_NAME`) {
-		t.Errorf("скрипт после правки:\n%s", s)
+	want := "        # jarvis-audio begin\n        export APULSE_PLAYBACK_DEVICE=plug:default\n        # jarvis-audio end\n"
+	if !strings.Contains(s, want) {
+		t.Errorf("нет блока с метками:\n%s", s)
 	}
-	if !strings.Contains(s, `export APULSE_PLAYBACK_DEVICE="sysdefault:CARD=$CARD_NAME"
-        ;;`) {
+	if !strings.Contains(s, `export APULSE_PLAYBACK_DEVICE="sysdefault:CARD=$CARD_NAME"`) {
 		t.Errorf("ветка plum потеряна:\n%s", s)
 	}
 	if out, err := exec.Command("sh", "-n", file).CombinedOutput(); err != nil {
 		t.Errorf("скрипт больше не разбирается оболочкой: %v %s", err, out)
 	}
-	// повторный запуск ничего не меняет
 	if again, err := patchAudioDevice(dir); err != nil || again {
 		t.Errorf("повторная правка: changed=%v err=%v", again, err)
 	}
@@ -72,40 +70,68 @@ func TestPatchAudioDeviceLeavesUnknownScripts(t *testing.T) {
 	}
 }
 
-// Имя карты берётся из /proc/asound/cards, пробелы вокруг имени отбрасываются.
-func TestCardNameSnippet(t *testing.T) {
-	cards := " 0 [AMLAUGESOUND  ]: AML-AUGESOUND - AML-AUGESOUND\n                      AML-AUGESOUND\n"
-	f := filepath.Join(t.TempDir(), "cards")
-	if err := os.WriteFile(f, []byte(cards), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sh := strings.Replace(cardNameShell, "/proc/asound/cards", f, 1) + `; printf %s "$CARD_NAME"`
-	out, err := exec.Command("sh", "-c", sh).Output()
-	if err != nil || string(out) != "AMLAUGESOUND" {
-		t.Errorf("имя карты %q, ошибка %v", out, err)
-	}
-}
-
-// Старый запуск start.sh задаёт устройство отдельно, в кавычках: на Станции 2 запускается именно он.
-func TestPatchAudioDeviceStartScript(t *testing.T) {
+// start.sh апстрима задаёт устройство в кавычках.
+func TestSetAudioDeviceStartScript(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "start.sh")
 	body := "case \"$COMPAT\" in\n    *plum*)\n        export APULSE_PLAYBACK_DEVICE=\"sysdefault:CARD=$CARD_NAME\"\n        ;;\n    *)\n        export APULSE_PLAYBACK_DEVICE=\"plug:default\"\n        ;;\nesac\n"
 	if err := os.WriteFile(file, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	changed, err := patchAudioDevice(dir)
-	if err != nil || !changed {
-		t.Fatalf("changed=%v err=%v", changed, err)
+	if err := SetAudioDevice(dir, "sysdefault:CARD=AMLAUGESOUND"); err != nil {
+		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(file)
-	if !strings.Contains(string(b), cardNameShell) {
+	if !strings.Contains(string(b), "        export APULSE_PLAYBACK_DEVICE=sysdefault:CARD=AMLAUGESOUND\n        # jarvis-audio end") {
 		t.Errorf("start.sh не исправлен:\n%s", b)
+	}
+	if strings.Contains(string(b), `"plug:default"`) {
+		t.Errorf("осталась прежняя строка:\n%s", b)
 	}
 	if out, err := exec.Command("sh", "-n", file).CombinedOutput(); err != nil {
 		t.Errorf("start.sh не разбирается оболочкой: %v %s", err, out)
 	}
-	if again, _ := patchAudioDevice(dir); again {
-		t.Error("повторная правка start.sh")
+	// второй выбор меняет значение между метками, а не плодит блоки
+	if err := SetAudioDevice(dir, "plug:default"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(file)
+	if strings.Count(string(b), markBegin) != 1 || !strings.Contains(string(b), "export APULSE_PLAYBACK_DEVICE=plug:default\n        # jarvis-audio end") {
+		t.Errorf("повторный выбор:\n%s", b)
+	}
+}
+
+// Установки прошлых версий: блок с именем карты и правка fix-sound.sh превращаются в блок с метками.
+func TestSetAudioDeviceLegacyForms(t *testing.T) {
+	legacy := strings.Replace(serviceFixture, "export APULSE_PLAYBACK_DEVICE=plug:default", legacyCardBlock, 1)
+	fixed := strings.Replace(serviceFixture, "export APULSE_PLAYBACK_DEVICE=plug:default", "export APULSE_PLAYBACK_DEVICE=sysdefault:CARD=AMLAUGESOUND", 1)
+	for name, body := range map[string]string{"legacy": legacy, "fix-sound": fixed} {
+		dir, file := writeService(t, body)
+		if err := SetAudioDevice(dir, "default"); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		b, _ := os.ReadFile(file)
+		if !strings.Contains(string(b), "export APULSE_PLAYBACK_DEVICE=default\n        # jarvis-audio end") || strings.Contains(string(b), "$(awk") {
+			t.Errorf("%s:\n%s", name, b)
+		}
+		if out, err := exec.Command("sh", "-n", file).CombinedOutput(); err != nil {
+			t.Errorf("%s не разбирается оболочкой: %v %s", name, err, out)
+		}
+	}
+}
+
+func TestSetAudioDeviceRejectsBadInput(t *testing.T) {
+	dir, _ := writeService(t, serviceFixture)
+	for _, dev := range []string{"", "a b", "x;reboot", "$(id)", "a\nb"} {
+		if err := SetAudioDevice(dir, dev); err == nil {
+			t.Errorf("устройство %q принято", dev)
+		}
+	}
+	if err := SetAudioDevice(t.TempDir(), "default"); err == nil {
+		t.Error("без скриптов ждали ошибку")
+	}
+	other, _ := writeService(t, "#!/bin/sh\nexport SOMETHING=1\n")
+	if err := SetAudioDevice(other, "default"); err == nil {
+		t.Error("незнакомый скрипт: ждали ошибку")
 	}
 }

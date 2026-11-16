@@ -31,6 +31,8 @@ type Spotify struct {
 	clock  func() time.Time
 	poll   time.Duration // как часто Run спрашивает Soloist, что играет
 	inst   *soloist.Installer
+	tuner  *soloist.Tuner
+	tuneMu sync.Mutex
 	cmds   atomic.Uint64 // сколько команд ушло в Soloist; по нему видно, вмешался ли кто-то
 	OnPlay func()        // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
 
@@ -95,6 +97,19 @@ func (s *Spotify) Installer() *soloist.Installer {
 		return nil
 	}
 	return s.inst
+}
+
+// Tuner — подбор звукового устройства для этой колонки; у nil-Spotify и без Soloist его нет.
+func (s *Spotify) Tuner() *soloist.Tuner {
+	if !s.Installed() {
+		return nil
+	}
+	s.tuneMu.Lock()
+	defer s.tuneMu.Unlock()
+	if s.tuner == nil {
+		s.tuner = soloist.NewTuner(s.root, soloist.Exec(s.exec), s.Restart)
+	}
+	return s.tuner
 }
 
 // CmdSeq — число отправленных в Soloist команд.
