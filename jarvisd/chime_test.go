@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -112,4 +114,26 @@ func TestEngineWakeChimeHonoursSwitch(t *testing.T) {
 		t.Fatalf("сигнал выключен, а играл %d раз", plays)
 	}
 	(&Engine{store: st}).playWakeChime(context.Background()) // без Chime — не падает
+}
+
+// Soloist держит звуковую карту, пока играет: сигнал должен прозвучать на паузе, а музыка потом вернуться.
+func TestWakeChimePausesSpotifyAround(t *testing.T) {
+	e, w := gateEngine(t, true)
+	e.store = &Store{s: defaultSettings(), path: filepath.Join(t.TempDir(), "settings.json")}
+	var during []string
+	e.chime = &Chime{Path: "testdata/chime_test.mp3", run: func(context.Context, int, []byte) error {
+		during = w.log()
+		return nil
+	}}
+	e.playWakeChime(context.Background())
+	if len(during) != 1 || during[0] != "pause" {
+		t.Fatalf("к началу сигнала Spotify должен быть на паузе, команды: %v", during)
+	}
+	waitFor(t, "возврат музыки", func() bool { l := w.log(); return len(l) > 1 && l[len(l)-1] == "play" })
+}
+
+func TestPlayRawErrorCarriesAplayText(t *testing.T) {
+	if err := wrapAplayErr(errors.New("exit status 1"), "aplay: audio open error: Device or resource busy\n"); !strings.Contains(err.Error(), "busy") {
+		t.Fatalf("текст aplay потерялся: %v", err)
+	}
 }

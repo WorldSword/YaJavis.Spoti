@@ -4,6 +4,7 @@ package main
 // Звук берётся с самой колонки из прошивки Алисы (в репозиторий и в бинарник он не входит), декодируется один раз.
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +51,17 @@ func (c *Chime) Play(ctx context.Context) error {
 		v := float64(int16(binary.LittleEndian.Uint16(pcm[i:]))) * gain
 		binary.LittleEndian.PutUint16(out[i:], uint16(clip16(v)))
 	}
-	return c.run(ctx, OutRate, out)
+	// сразу после паузы Soloist отпускает карту не мгновенно: пара коротких повторов
+	for try := 0; ; try++ {
+		if err = c.run(ctx, OutRate, out); err == nil || try >= 3 {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
 }
 
 func (c *Chime) load() ([]byte, error) {
@@ -138,6 +150,8 @@ func playRaw(ctx context.Context, rate int, pcm []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, aplay, "-q", "-D", "default", "-t", "raw", "-f", "S16_LE", "-r", itoa(rate), "-c", "1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -148,7 +162,15 @@ func playRaw(ctx context.Context, rate int, pcm []byte) error {
 	_, werr := in.Write(pcm)
 	in.Close()
 	if err := cmd.Wait(); err != nil {
-		return err
+		return wrapAplayErr(err, stderr.String())
 	}
 	return werr
+}
+
+// wrapAplayErr добавляет к «exit status 1» то, что aplay сказал сам (например, «Device or resource busy»).
+func wrapAplayErr(err error, out string) error {
+	if out = strings.TrimSpace(out); out != "" {
+		return fmt.Errorf("%w: %s", err, out)
+	}
+	return err
 }

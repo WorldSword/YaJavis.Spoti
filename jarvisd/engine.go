@@ -1252,6 +1252,9 @@ func (e *Engine) playWakeChime(ctx context.Context) {
 	if e.chime == nil || e.store.Get().WakeChimeOff {
 		return
 	}
+	// Soloist держит звуковую карту, пока играет: на время сигнала Spotify на паузе (как на время голоса).
+	e.spotifyVoiceStart()
+	defer e.spotifyVoiceEnd()
 	if err := e.chime.Play(ctx); err != nil {
 		log.Printf("Джарвис: сигнал активации не сыграл: %v", err)
 	}
