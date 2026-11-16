@@ -32,3 +32,6 @@ kws/bg_long/
 kws/out*/
 testdata/private/
 
+
+# build output
+jarvisd/jarvisd
