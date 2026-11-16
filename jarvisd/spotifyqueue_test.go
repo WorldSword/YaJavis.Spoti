@@ -305,3 +305,44 @@ func TestDJVoiceIsLeftAlone(t *testing.T) {
 		t.Errorf("название вставки: %q", got)
 	}
 }
+
+// Сразу после смены трека очередь ещё старая: новый текущий трек стоит в ней первым. В панели он не должен дублироваться.
+func TestSnapshotDropsCurrentFromStaleQueue(t *testing.T) {
+	r := &recExec{now: fixture(t, "soloist_now_dj.json"), queue: fixture(t, "soloist_queue.json")}
+	sp := newQueueSpotify(t, r)
+	sp.Now(context.Background())
+	sp.RefreshQueue(context.Background())
+	// трек переключился на второй из очереди, а очередь ещё не обновили
+	r.mu.Lock()
+	r.now = []byte(strings.Replace(string(fixture(t, "soloist_now_dj.json")), "spotify:track:68lbSrXDORS51pmyjZv712", "spotify:track:6MtUSSf9h4s2lKkkkXdu5J", 1))
+	r.mu.Unlock()
+	sp.Now(context.Background())
+	snap := sp.Snapshot()
+	for _, tr := range snap.Next {
+		if tr.ID == snap.Track.ID {
+			t.Fatalf("текущий трек продублирован в очереди: %+v", snap.Next)
+		}
+	}
+	if len(snap.Next) == 0 || snap.Next[0].Title != "back to friends" {
+		t.Errorf("после текущего должен идти следующий: %+v", snap.Next)
+	}
+}
+
+// В очередь попадают только треки и выпуски по адресу; вставки DJ не попадают, даже если тип записан как track.
+func TestParseSpotifyQueueKeepsOnlyTracks(t *testing.T) {
+	q, err := parseSpotifyQueue([]byte(`{"upcoming":[
+	 {"item":{"uri":"spotify:media:x","entity_type":"track","decorations":{"identity":{"name":"Up next"}}}},
+	 {"item":{"uri":"spotify:track:a","entity_type":"unknown","decorations":{"identity":{"name":"Странный"}}}},
+	 {"item":{"uri":"spotify:track:b","entity_type":"track","decorations":{"identity":{"name":"Нормальный"}}}},
+	 {"item":{"uri":"spotify:episode:c","entity_type":"episode","decorations":{"identity":{"name":"Выпуск"}}}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tr := range q {
+		names = append(names, tr.Title)
+	}
+	if strings.Join(names, ",") != "Странный,Нормальный,Выпуск" {
+		t.Errorf("в очереди: %v", names)
+	}
+}

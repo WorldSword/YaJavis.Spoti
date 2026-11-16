@@ -454,7 +454,7 @@ func (s *Spotify) Snapshot() MusicState {
 	}
 	n := s.last
 	return MusicState{Source: "spotify", Cover: n.Cover, Playing: n.Playing, Paused: !n.Playing,
-		Track: Track{ID: n.URI, Title: n.Title, Author: n.Artist}, Pos: n.Pos, Dur: n.Dur, Next: append([]Track(nil), s.next...)}
+		Track: Track{ID: n.URI, Title: n.Title, Author: n.Artist}, Pos: n.Pos, Dur: n.Dur, Next: upcomingAfter(s.next, n.URI)}
 }
 
 // Run — раз в s.poll спрашивать Soloist, что играет, пока не отменят ctx.
@@ -589,8 +589,8 @@ func parseSpotifyQueue(b []byte) ([]Track, error) {
 	}
 	out := make([]Track, 0, len(raw.Upcoming))
 	for _, u := range raw.Upcoming {
-		if isDJVoice(u.Item.URI) {
-			continue
+		if !strings.HasPrefix(u.Item.URI, "spotify:track:") && !strings.HasPrefix(u.Item.URI, "spotify:episode:") {
+			continue // озвучка DJ (spotify:media:…) и всё незнакомое
 		}
 		d := u.Item.Decorations
 		t := Track{ID: u.Item.URI, Title: d.Identity.Name}
@@ -665,3 +665,15 @@ func (s *Spotify) applyVolume(ctx context.Context, v int) {
 // isDJVoice — «вставка» DJ X (Up next, Далее): spotify:media:…, это озвучка, а не трек. Она играет как обычно,
 // но в списке очереди её не показываем.
 func isDJVoice(uri string) bool { return strings.HasPrefix(uri, "spotify:media:") }
+
+// upcomingAfter — очередь после текущего трека. Сразу после смены трека очередь ещё прежняя и текущий трек стоит
+// в ней первым: всё до него включительно отбрасываем, чтобы он не мелькал в списке дважды.
+func upcomingAfter(q []Track, cur string) []Track {
+	for i, t := range q {
+		if cur != "" && t.ID == cur {
+			q = q[i+1:]
+			break
+		}
+	}
+	return append([]Track(nil), q...)
+}
