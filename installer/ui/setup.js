@@ -136,9 +136,8 @@ $("#install").addEventListener("click", async () => {
   const v = $("#vless").value.trim();
   if (v && !v.startsWith("vless://")) { $("#s3-err").textContent = "Ссылка должна начинаться с vless://"; return; }
   try {
-    await api("POST", "/api/install", { ip: speaker.ip, password: pw, openai: $("#openai").value.trim(), vless: v, timezone: $("#tz").value, clean: $("#clean").checked,
-      soloist: { key: $("#sp-key").value.trim(), name: $("#sp-name").value.trim(), clientid: $("#sp-cid").value.trim(), clientsecret: $("#sp-sec").value.trim() } });
-    $("#pw").value = $("#pw2").value = $("#openai").value = $("#sp-key").value = $("#sp-cid").value = $("#sp-sec").value = "";
+    await api("POST", "/api/install", { ip: speaker.ip, password: pw, openai: $("#openai").value.trim(), vless: v, timezone: $("#tz").value, clean: $("#clean").checked });
+    $("#pw").value = $("#pw2").value = $("#openai").value = "";
     run("Устанавливаю…");
   } catch (err) { $("#s3-err").textContent = err.message; }
 });
@@ -149,7 +148,7 @@ $("#uninstall").addEventListener("click", async () => {
 });
 
 const STAGES = [["Подключение", /Подключаюсь|Определена|Найден Джарвис/], ["Место", /Стираю|Удаляю|Свободно на колонке/], ["Файлы", /Копирую|%$/],
-  ["Автозапуск", /Выключаю|Добавляю автозапуск/], ["Spotify", /Spotify:/], ["Перезагрузка", /Перезагружаю/], ["Готово", /Готово/]];
+  ["Автозапуск", /Выключаю|Добавляю автозапуск/], ["Перезагрузка", /Перезагружаю/], ["Готово", /Готово/]];
 function drawStages(lines, done, error) {
   let at = 0, pct = null;
   lines.forEach((l) => { STAGES.forEach(([, re], i) => { if (re.test(l) && i >= at) at = i; }); const m = l.match(/(\d+)%$/); if (m) pct = +m[1]; });
