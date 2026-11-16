@@ -25,7 +25,8 @@ type Spotify struct {
 	exec   spotifyExec
 	clock  func() time.Time
 	poll   time.Duration // как часто Run спрашивает Soloist, что играет
-	OnPlay func()        // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
+	inst   *SoloistInstaller
+	OnPlay func() // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
 
 	mu     sync.Mutex
 	last   SpotifyNow // последний удачный ответ Soloist
@@ -45,7 +46,7 @@ func NewSpotify() *Spotify {
 }
 
 func newSpotifyAt(root string, exec spotifyExec) *Spotify {
-	return &Spotify{root: root, exec: exec, clock: time.Now, poll: 2 * time.Second}
+	return &Spotify{root: root, exec: exec, clock: time.Now, poll: 2 * time.Second, inst: newSoloistInstaller(exec)}
 }
 
 // findSoloistRoot — первая папка, где лежит scripts/control.sh Soloist; пусто, если Soloist не найден.
@@ -63,6 +64,14 @@ func findSoloistRoot(candidates ...string) string {
 
 func osSpotifyExec(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+// Installer — установка Soloist из панели; у nil-Spotify его нет.
+func (s *Spotify) Installer() *SoloistInstaller {
+	if s == nil {
+		return nil
+	}
+	return s.inst
 }
 
 func (s *Spotify) Installed() bool { return s != nil && s.root != "" }

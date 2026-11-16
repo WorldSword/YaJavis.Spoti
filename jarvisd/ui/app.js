@@ -661,9 +661,19 @@ function connDefs() {
       drop: ya.signed_in ? `<button class="btn ghost danger" id="ya-out">Выйти</button>` : yt.set ? `<button class="btn ghost danger" id="yt-clear">Убрать куки</button>` : "" },
     { id: "spotify", group: "home", mono: "Sp", name: "Spotify", about: "Музыка голосом: «Джарвис, включи … в Spotify». Играет Soloist — его ставите вы сами, Джарвис только передаёт запрос",
       more: "Нужен Spotify Premium и установленный Soloist (Spotify Connect на колонке).",
-      on: !!sp.installed, need: !sp.installed, wait: !!sp.installed && !sp.running,
-      state: !sp.installed ? "Soloist не найден" : sp.playing ? "играет" : sp.running ? "готов" : "Soloist не отвечает",
-      body: !sp.installed ? `<p class="note">Установите Soloist на колонку (<a href="https://github.com/Horohi/soloist-station-lite" target="_blank" rel="noopener">инструкция</a>) и перезапустите Джарвиса — карточка найдёт его сама. Ищу в /data/yam/share/horohi.soloist и /data/opt/soloist.</p>`
+      on: !!sp.installed, need: !sp.installed, wait: sp.installed ? !sp.running : sp.install?.state === "running",
+      state: !sp.installed ? (sp.install?.state === "running" ? "ставлю…" : "Soloist не найден") : sp.playing ? "играет" : sp.running ? "готов" : "Soloist не отвечает",
+      body: !sp.installed ? (sp.install?.state === "running"
+          ? `<p class="note">Ставлю Soloist: ${esc(sp.install.step || "…")}. Это займёт пару минут; Джарвис перезапустится сам.</p>`
+          : `${sp.install?.state === "error" ? `<p class="err">${esc(sp.install.error || "Не получилось установить Soloist")}</p>` : ""}
+        <p class="note">Soloist не найден. Джарвис сам скачает его с GitHub автора, проверит файл и поставит на колонку. Нужен Spotify Premium.</p>
+        <div class="f"><label for="sp-i-key">API-ключ Soloist</label><input id="sp-i-key" type="password" autocomplete="off" placeholder="spak_…"></div>
+        <details class="mini"><summary>Где взять ключ</summary><ol class="how"><li>Откройте <a href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noopener">developer.spotify.com/dashboard/soloist</a> и войдите в Spotify Premium.</li><li>Скопируйте ключ (начинается с spak_) и вставьте сюда.</li></ol></details>
+        <div class="f"><label for="sp-i-name">Имя устройства в Spotify (по желанию)</label><input id="sp-i-name" type="text" autocomplete="off" placeholder="Определится по модели колонки"></div>
+        <details class="mini"><summary>Голосовой поиск: свои Client ID и Secret (по желанию)</summary>
+          <div class="f"><label for="sp-i-cid">Client ID</label><input id="sp-i-cid" type="password" autocomplete="off"></div>
+          <div class="f"><label for="sp-i-sec">Client Secret</label><input id="sp-i-sec" type="password" autocomplete="off"></div></details>
+        <div class="row"><button class="btn primary" id="sp-install">Установить Soloist</button></div>`)
         : `<div class="cn-ok">${icon("done")}<span>Soloist найден<small>${esc(sp.root || "")}</small></span></div>
         <div class="f"><label for="sp-name">Имя устройства в Spotify</label><input id="sp-name" type="text" value="${esc(sp.device_name || "")}" autocomplete="off" placeholder="Например: Станция"></div>
         <div class="f"><label for="sp-key">API-ключ Soloist</label><input id="sp-key" type="password" value="" autocomplete="off" placeholder="${esc(sp.api_key || "Вставьте ключ")}"></div>
@@ -866,6 +876,21 @@ async function connClick(e) {
       return act(btn, async () => { await api("PUT", "/api/youtube", { cookies: txt }); $("#yt-cookies").value = ""; await redraw(); }, "YouTube принял вход");
     }
     case "yt-clear": if (confirm("Убрать вход в YouTube с колонки?")) act(btn, async () => { await api("DELETE", "/api/youtube"); await redraw(); }); return;
+    case "sp-install": {
+      const key = $("#sp-i-key").value.trim();
+      if (!key) return toast("Сначала вставьте API-ключ Soloist", true);
+      const body = { api_key: key, device_name: $("#sp-i-name").value.trim(), client_id: $("#sp-i-cid").value.trim(), client_secret: $("#sp-i-sec").value.trim() };
+      return act(btn, async () => {
+        await api("POST", "/api/spotify/install", body);
+        // пока ставится, панель опрашивает состояние; в конце Джарвис перезапускается — ошибки связи в этот момент ждём
+        for (let n = 0; n < 150; n++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          try { await redraw(); } catch (e) { continue; }
+          if (S.spotify?.installed || S.spotify?.install?.state === "error") break;
+        }
+        if (!S.spotify?.installed) throw new Error(S.spotify?.install?.error || "Установка не завершилась вовремя — посмотрите карточку позже");
+      }, "Soloist поставлен — осталось включить музыку в Spotify");
+    }
     case "sp-save": {
       const f = { device_name: "#sp-name", api_key: "#sp-key", client_id: "#sp-cid", client_secret: "#sp-sec" }, body = {};
       for (const [k, sel] of Object.entries(f)) { const el = $(sel); if (el && el.value !== el.defaultValue) body[k] = el.value.trim(); }
