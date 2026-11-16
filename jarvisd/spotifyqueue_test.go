@@ -26,8 +26,14 @@ func TestParseSpotifyQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(q) != 10 {
-		t.Fatalf("треков в очереди %d, ждали 10", len(q))
+	// в файле 10 записей, но «Up next» от DJ X — голосовая вставка (spotify:media:…), а не трек
+	if len(q) != 9 {
+		t.Fatalf("треков в очереди %d, ждали 9", len(q))
+	}
+	for _, tr := range q {
+		if !strings.HasPrefix(tr.ID, "spotify:track:") {
+			t.Errorf("в очередь попало не трек: %+v", tr)
+		}
 	}
 	first := q[0]
 	if first.Title != "так похуй" || !strings.HasPrefix(first.ID, "spotify:track:") || first.Author == "" || !strings.HasPrefix(first.Art, "https://i.scdn.co/") {
@@ -171,7 +177,7 @@ func TestSnapshotHasUpcoming(t *testing.T) {
 	}
 	sp.RefreshQueue(context.Background())
 	snap := sp.Snapshot()
-	if len(snap.Next) != 10 || snap.Next[0].Title != "так похуй" || snap.Next[0].Art == "" {
+	if len(snap.Next) != 9 || snap.Next[0].Title != "так похуй" || snap.Next[0].Art == "" {
 		t.Errorf("Next в снимке: %+v", snap.Next)
 	}
 	if snap.Queue != 0 {
@@ -276,5 +282,43 @@ func TestSpotifyVolumeFollowsApp(t *testing.T) {
 	now()
 	if len(mixer) != 2 || mixer[1] != "sset Master 38%" {
 		t.Errorf("ALSA Master: %v", mixer)
+	}
+}
+
+// Голос DJ X Soloist проиграть не умеет, и приложение на телефоне зависает в ожидании: пропускаем вставку сами.
+func TestSkipsDJVoiceSegment(t *testing.T) {
+	voice := strings.Replace(string(fixture(t, "soloist_now_dj.json")), "spotify:track:68lbSrXDORS51pmyjZv712", "spotify:media:5rELQYNJgj4btlKsA47hiR", 1)
+	r := &recExec{now: []byte(voice)}
+	sp := newQueueSpotify(t, r)
+	nexts := func() int {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		n := 0
+		for _, c := range r.calls {
+			if len(c) > 0 && c[len(c)-1] == "next" {
+				n++
+			}
+		}
+		return n
+	}
+	for i := 0; i < 3; i++ { // тот же сегмент при нескольких опросах пропускаем один раз
+		if _, err := sp.Now(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := nexts(); n != 1 {
+		t.Errorf("команд next: %d, ждали 1", n)
+	}
+	if sp.CmdSeq() != 0 {
+		t.Errorf("автопропуск не должен считаться командой пользователя: %d", sp.CmdSeq())
+	}
+	// обычный трек не пропускаем
+	r2 := &recExec{now: fixture(t, "soloist_now_dj.json")}
+	sp2 := newQueueSpotify(t, r2)
+	sp2.Now(context.Background())
+	for _, c := range r2.calls {
+		if c[len(c)-1] == "next" {
+			t.Errorf("обычный трек пропущен: %v", c)
+		}
 	}
 }
