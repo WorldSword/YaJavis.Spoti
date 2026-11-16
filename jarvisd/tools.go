@@ -31,6 +31,8 @@ type Tools struct {
 	Music         func(ctx context.Context, query string) string // включить музыку с YouTube (nil — нельзя)
 	// MusicCtl — управлять тем, что играет с YouTube: пауза, продолжить, перемотка, следующее, стоп, что играет
 	MusicCtl func(ctx context.Context, command string) string
+	// SpotifyPlay — найти и включить в Spotify через Soloist (nil — Soloist не найден, инструмент не объявляется)
+	SpotifyPlay func(ctx context.Context, query string) string
 	// MusicQueue — добавить в очередь YouTube (если ничего не играет — включить)
 	MusicQueue func(ctx context.Context, query string) string
 	token      func() string
@@ -367,9 +369,17 @@ func (t *Tools) Definitions() []any {
 				"queue": map[string]any{"type": "boolean", "description": "true — не включать сразу, а добавить в очередь после того, что играет («добавь в очередь», «потом включи»)"}},
 				"required": []any{"query"}}})
 	}
+	if t.SpotifyPlay != nil {
+		defs = append(defs, map[string]any{"type": "function", "name": "play_spotify",
+			"description": "Найти и включить трек, альбом или исполнителя в Spotify на колонке. Вызывай на любую просьбу со словом Spotify, Спотифай или Спотик " +
+				"(«включи в Спотифае Кино»); запрос — исполнитель и название. Не обещай «сейчас поищу» без вызова.",
+			"parameters": map[string]any{"type": "object", "properties": map[string]any{
+				"query": map[string]any{"type": "string", "description": "что искать: исполнитель и название"}},
+				"required": []any{"query"}}})
+	}
 	if t.MusicCtl != nil {
 		defs = append(defs, map[string]any{"type": "function", "name": "music_control",
-			"description": "Управлять тем, что сейчас играет с YouTube: пауза, продолжить, перемотка вперёд/назад, с начала, следующее видео, похожее (радио), выключить, что играет.",
+			"description": "Управлять тем, что сейчас играет с YouTube или в Spotify: пауза, продолжить, перемотка вперёд/назад, с начала, следующее видео, похожее (радио), выключить, что играет.",
 			"parameters": map[string]any{"type": "object", "properties": map[string]any{
 				"command": map[string]any{"type": "string", "description": "команда по-русски, например «пауза», «продолжи», «перемотай вперёд на 2 минуты», «назад на 30 секунд», «сначала», «следующее», «включи похожее», «выключи музыку», «что играет»"}},
 				"required": []any{"command"}}})
@@ -525,6 +535,13 @@ func (t *Tools) Call(ctx context.Context, name, args string) string {
 			return t.MusicQueue(ctx, a.Query)
 		}
 		return t.Music(ctx, a.Query)
+	}
+	if name == "play_spotify" && t.SpotifyPlay != nil {
+		var a struct{ Query string }
+		if json.Unmarshal([]byte(args), &a) != nil || strings.TrimSpace(a.Query) == "" {
+			return "Не понял, что включить в Spotify."
+		}
+		return t.SpotifyPlay(ctx, a.Query)
 	}
 	if name == "music_control" && t.MusicCtl != nil {
 		var a struct{ Command string }

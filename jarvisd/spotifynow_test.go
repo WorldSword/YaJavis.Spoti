@@ -77,7 +77,9 @@ func TestSpotifyActiveExpires(t *testing.T) {
 		t.Error("через 4 с без обновления Spotify не должен считаться активным")
 	}
 	clk.t = time.Unix(1000, 0)
-	s.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("демон не отвечает") }
+	s.exec = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("демон не отвечает")
+	}
 	if _, err := s.Now(context.Background()); err == nil {
 		t.Fatal("ошибка запуска должна вернуться")
 	}

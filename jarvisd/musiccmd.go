@@ -12,6 +12,11 @@ func (e *Engine) controlMusic(text string) (string, bool) {
 }
 
 func (e *Engine) controlMusicContext(parent context.Context, text string) (string, bool) {
+	if !e.music.Playing() { // играет YouTube — команды ему; иначе Spotify, если он активен
+		if answer, ok := e.controlSpotify(parent, text); ok {
+			return answer, true
+		}
+	}
 	if answer, ok := e.resumeSavedRequest(parent, text); ok {
 		return answer, true
 	}

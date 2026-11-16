@@ -692,6 +692,18 @@ func (e *Engine) converse(byWord, sure bool, preroll, clip []int16, quick <-chan
 			}
 			return true
 		}
+		if q, ok := spotifyRequest(cmd); ok && e.spotify.Installed() {
+			quiet()
+			closeVoice()
+			ctx, finish := e.beginMedia()
+			defer finish()
+			answer := e.mediaWithChatterFor(ctx, "search", func() string { return e.playSpotifyContext(ctx, q) })
+			note("музыка", text, answer)
+			if !strings.HasPrefix(answer, "Включаю") && ctx.Err() == nil {
+				e.sayMusicStatusContext(ctx, answer)
+			}
+			return true
+		}
 		if q, ok := youtubeRequest(cmd); ok && e.music != nil {
 			quiet()
 			closeVoice()
@@ -729,7 +741,7 @@ func (e *Engine) converse(byWord, sure bool, preroll, clip []int16, quick <-chan
 			}
 			return true
 		}
-		if e.music.Active() {
+		if e.music.Active() || e.spotify.Active() {
 			if action, _, _, ok := musicCommand(text); ok {
 				quiet()
 				closeVoice()

@@ -608,6 +608,14 @@ func main() {
 			return "Добавлено в очередь: «" + t.Title + "». Скажи об этом одной короткой фразой."
 		}
 		tools.MusicCtl = func(ctx context.Context, command string) string {
+			if !engine.music.Playing() { // играет YouTube — управляем им, иначе Spotify
+				if answer, ok := engine.controlSpotify(ctx, command); ok {
+					if !engine.InDialog() {
+						engine.EndAfterMusic()
+					}
+					return answer + " Скажи об этом одним-двумя словами."
+				}
+			}
 			if answer, ok := engine.resumeSavedRequest(ctx, command); ok {
 				return answer
 			}
@@ -639,6 +647,22 @@ func main() {
 	engine.music.mu.Unlock()
 	go engine.alice.Run(context.Background())
 	engine.spotify = NewSpotify()
+	engine.spotify.OnPlay = engine.spotifyStarted
+	if engine.spotify.Installed() { // без Soloist инструмент play_spotify не объявляется
+		tools.SpotifyPlay = func(ctx context.Context, query string) string {
+			inDialog := engine.InDialog()
+			a := engine.playSpotifyContext(ctx, query)
+			if strings.HasPrefix(a, "Включаю") {
+				if inDialog {
+					a += " Уже играет, разговор продолжается: коротко и по-живому скажи, что включил, и продолжай беседу как обычно."
+				} else {
+					a += " Скажи вслух только «Включаю» и больше ничего."
+					engine.EndAfterMusic()
+				}
+			}
+			return a
+		}
+	}
 	go engine.spotify.Run(context.Background())
 	go engine.Run(context.Background())
 	// пока в комнате кто-то есть, держим наготове соединение с OpenAI: разговор открывается быстрее
