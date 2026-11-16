@@ -186,6 +186,10 @@ func (i *Installer) install(ctx context.Context, o Opts) error {
 		return err
 	}
 
+	if _, err := patchAudioDevice(dir); err != nil {
+		return fmt.Errorf("не удалось подготовить звук Soloist: %w", err)
+	}
+
 	i.setStep("запускаю установщик Soloist")
 	rctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
