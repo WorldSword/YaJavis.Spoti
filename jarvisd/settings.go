@@ -109,8 +109,9 @@ type Settings struct {
 
 	Language string `json:"language"` // на каком языке говорит хозяин: ru | en | uk | "" — определять самому
 
-	RadioOff bool          `json:"radio_off"` // после очереди не играть похожее, а замолчать
-	Night    NightSettings `json:"night"`
+	SpotifyLiked string        `json:"spotify_liked,omitempty"` // адрес плейлиста «Любимые треки» в Spotify, узнаётся сам
+	RadioOff     bool          `json:"radio_off"`               // после очереди не играть похожее, а замолчать
+	Night        NightSettings `json:"night"`
 
 	// длинная запись фона: файлы уходят HTTP PUT (WebDAV, kws/bg_receiver.py)
 	BgURL  string `json:"bg_url"`

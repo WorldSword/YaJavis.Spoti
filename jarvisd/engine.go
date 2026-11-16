@@ -709,6 +709,18 @@ func (e *Engine) converse(byWord, sure bool, preroll, clip []int16, quick <-chan
 			}
 			return true
 		}
+		if kind, ok := e.spotifyKind(cmd); ok {
+			quiet()
+			closeVoice()
+			ctx, finish := e.beginMedia()
+			defer finish()
+			answer := e.mediaWithChatterFor(ctx, "search", func() string { return e.playSpotifyKind(ctx, kind) })
+			note("музыка", text, answer)
+			if !strings.HasPrefix(answer, "Включаю") && ctx.Err() == nil {
+				e.sayMusicStatusContext(ctx, answer)
+			}
+			return true
+		}
 		if q, ok := spotifyRequest(cmd); ok && e.spotify.Installed() {
 			quiet()
 			closeVoice()

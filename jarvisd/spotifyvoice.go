@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // aliceTextFunc — команда штатной Алисе; в тестах подменяется.
@@ -102,4 +103,85 @@ func (e *Engine) spotifyStarted() {
 			log.Printf("spotify: у Алисы играла своя музыка — поставил её на паузу")
 		}
 	}
+}
+
+// spotifyContextRequest — «включи в Spotify мои любимые треки / диджея / радио по этому треку».
+// Нужно слово Spotify; kind: liked | dj | radio.
+func spotifyContextRequest(text string) (string, bool) {
+	if !spotifyRe.MatchString(text) {
+		return "", false
+	}
+	return contextKind(text)
+}
+
+// spotifyContextRequestOwned — то же, но слово Spotify не нужно: Spotify уже играет и речь о нём.
+func spotifyContextRequestOwned(text string) (string, bool) { return contextKind(text) }
+
+func contextKind(text string) (string, bool) {
+	t := strings.ToLower(text)
+	verb := false
+	for _, v := range []string{"включи", "поставь", "запусти", "сыграй", "играй", "вруби", "давай"} {
+		if strings.Contains(t, v) {
+			verb = true
+		}
+	}
+	if !verb {
+		return "", false
+	}
+	words := strings.FieldsFunc(t, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	has := func(prefixes ...string) bool {
+		for _, w := range words {
+			for _, p := range prefixes {
+				if strings.HasPrefix(w, p) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	switch {
+	case has("любим", "лайк", "избранн", "понравивш", "liked"):
+		return "liked", true
+	case has("радио") && has("этому", "текущ", "трек", "песн", "этой"):
+		return "radio", true
+	case has("диджей", "диджея", "dj") || strings.Contains(t, "ди-джей") || strings.Contains(t, "ди джей"):
+		return "dj", true
+	}
+	return "", false
+}
+
+// playSpotifyKind — голосовая команда или кнопка панели: ответ вслух.
+func (e *Engine) playSpotifyKind(ctx context.Context, kind string) string {
+	var err error
+	say := ""
+	switch kind {
+	case "liked":
+		err, say = e.spotify.PlayLiked(ctx), "Включаю ваши любимые треки в Spotify."
+	case "dj":
+		err, say = e.spotify.PlayDJ(ctx), "Включаю DJ в Spotify."
+	case "radio":
+		err, say = e.spotify.PlayRadio(ctx), "Включаю радио по этому треку."
+	default:
+		return "Не поняла, что включить в Spotify."
+	}
+	if err != nil {
+		log.Printf("spotify: %s: %v", kind, err)
+		return "Не получилось: " + shortErr(err)
+	}
+	_, _ = e.spotify.Now(ctx)
+	return say
+}
+
+// spotifyKind — команда про любимые треки, DJ или радио, адресованная Spotify.
+func (e *Engine) spotifyKind(text string) (string, bool) {
+	if e.spotify == nil || !e.spotify.Installed() {
+		return "", false
+	}
+	if kind, ok := spotifyContextRequest(text); ok {
+		return kind, true
+	}
+	if e.spotifyOwns() {
+		return spotifyContextRequestOwned(text)
+	}
+	return "", false
 }

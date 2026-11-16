@@ -131,6 +131,10 @@ func (e *Engine) TextTurn(text string, speak bool) {
 		e.journal.note("продолжение ролика", text, answer)
 		return
 	}
+	if kind, ok := e.spotifyKind(text); ok {
+		e.journal.note("музыка", text, e.playSpotifyKind(context.Background(), kind))
+		return
+	}
 	if q, ok := spotifyRequest(text); ok && e.spotify.Installed() {
 		e.journal.note("музыка", text, e.playSpotifyContext(context.Background(), q))
 		return

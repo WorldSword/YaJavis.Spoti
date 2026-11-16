@@ -36,10 +36,16 @@ type Spotify struct {
 	cmds   atomic.Uint64 // сколько команд ушло в Soloist; по нему видно, вмешался ли кто-то
 	OnPlay func()        // зазвучало (включили или продолжили): остальная музыка Джарвиса должна замолчать
 
-	mu     sync.Mutex
-	last   SpotifyNow // последний удачный ответ Soloist
-	lastAt time.Time
-	ok     bool
+	// OnLearnLiked вызывается, когда Джарвис впервые увидел плейлист «Любимые треки» этого пользователя
+	OnLearnLiked func(uri string)
+
+	mu      sync.Mutex
+	last    SpotifyNow // последний удачный ответ Soloist
+	next    []Track    // следующие треки очереди Spotify
+	nextFor string     // для какого трека снята очередь
+	liked   string     // адрес плейлиста «Любимые треки»
+	lastAt  time.Time
+	ok      bool
 }
 
 // soloistRoots — где Soloist может лежать: установка через YAM, затем автономная.
@@ -234,10 +240,11 @@ func spotifyRequest(text string) (string, bool) {
 
 // SpotifyNow — что сейчас у Soloist.
 type SpotifyNow struct {
-	Playing       bool
-	Title, Artist string
-	Cover, URI    string
-	Pos, Dur      float64 // секунды
+	Playing                 bool
+	Title, Artist           string
+	Cover, URI              string
+	ContextURI, ContextName string  // плейлист, альбом или радио, из которого играет трек
+	Pos, Dur                float64 // секунды
 }
 
 type soloistIdentity struct {
@@ -278,6 +285,14 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 				} `json:"playback"`
 			} `json:"decorations"`
 		} `json:"item"`
+		Context struct {
+			URI         string `json:"uri"`
+			Decorations struct {
+				Identity struct {
+					Name string `json:"name"`
+				} `json:"identity"`
+			} `json:"decorations"`
+		} `json:"context"`
 		Position struct {
 			Ms float64 `json:"position_ms"`
 		} `json:"position"`
@@ -289,7 +304,8 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 		return SpotifyNow{}, nil
 	}
 	it, d := raw.Item, raw.Item.Decorations
-	now := SpotifyNow{Playing: raw.Status == "playing", Title: d.Identity.Name, URI: it.URI, Pos: raw.Position.Ms / 1000, Dur: d.Playback.DurationMs / 1000}
+	now := SpotifyNow{Playing: raw.Status == "playing", Title: d.Identity.Name, URI: it.URI, Pos: raw.Position.Ms / 1000, Dur: d.Playback.DurationMs / 1000,
+		ContextURI: raw.Context.URI, ContextName: raw.Context.Decorations.Identity.Name}
 	if now.Title == "" && now.URI != "" {
 		now.Title = "Spotify"
 	}
@@ -358,16 +374,20 @@ func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
 		now, err = parseSpotifyNow(out)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if err != nil {
 		s.last, s.ok = SpotifyNow{}, false
+		s.mu.Unlock()
 		return SpotifyNow{}, err
 	}
 	s.last, s.lastAt, s.ok = now, s.clock(), true
+	learn := s.learnLiked(now)
+	s.mu.Unlock()
+	if learn != "" && s.OnLearnLiked != nil {
+		s.OnLearnLiked(learn)
+	}
 	return now, nil
 }
 
-// active — есть свежий ответ Soloist с треком; s.mu занят.
 func (s *Spotify) active() bool {
 	return s.ok && s.last.URI != "" && s.clock().Sub(s.lastAt) <= 3*time.Second
 }
@@ -421,7 +441,7 @@ func (s *Spotify) Snapshot() MusicState {
 	}
 	n := s.last
 	return MusicState{Source: "spotify", Cover: n.Cover, Playing: n.Playing, Paused: !n.Playing,
-		Track: Track{ID: n.URI, Title: n.Title, Author: n.Artist}, Pos: n.Pos, Dur: n.Dur}
+		Track: Track{ID: n.URI, Title: n.Title, Author: n.Artist}, Pos: n.Pos, Dur: n.Dur, Next: append([]Track(nil), s.next...)}
 }
 
 // Run — раз в s.poll спрашивать Soloist, что играет, пока не отменят ctx.
@@ -432,11 +452,175 @@ func (s *Spotify) Run(ctx context.Context) {
 	t := time.NewTicker(s.poll)
 	defer t.Stop()
 	for {
-		_, _ = s.Now(ctx)
+		if now, err := s.Now(ctx); err == nil && now.URI != "" {
+			s.refreshQueueIfChanged(ctx, now.URI)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// likedNames — как Spotify называет плейлист «Любимые треки» в разных языках.
+var likedNames = map[string]bool{"liked songs": true, "любимые треки": true, "понравившиеся": true, "избранное": true, "любимые песни": true}
+
+// learnLiked запоминает адрес «Любимых»; вызывать под s.mu. Возвращает адрес, если он новый.
+func (s *Spotify) learnLiked(n SpotifyNow) string {
+	if n.ContextURI == "" || !likedNames[strings.ToLower(strings.TrimSpace(n.ContextName))] || n.ContextURI == s.liked {
+		return ""
+	}
+	s.liked = n.ContextURI
+	return n.ContextURI
+}
+
+// Liked — адрес плейлиста «Любимые треки»; пусто, пока Джарвис его не видел.
+func (s *Spotify) Liked() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.liked
+}
+
+// SetLiked — подставить сохранённый ранее адрес «Любимых».
+func (s *Spotify) SetLiked(uri string) {
+	if s == nil || !validSpotifyURI(uri) {
+		return
+	}
+	s.mu.Lock()
+	s.liked = uri
+	s.mu.Unlock()
+}
+
+var spotifyURIRe = regexp.MustCompile(`^spotify:[a-z]+(?::[A-Za-z0-9_]+)+$`)
+
+func validSpotifyURI(u string) bool { return spotifyURIRe.MatchString(u) }
+
+// PlayURI включает адрес Spotify (трек, плейлист, радио) в Soloist.
+func (s *Spotify) PlayURI(ctx context.Context, uri string) error {
+	if !s.Installed() {
+		return errors.New("Soloist не найден на колонке")
+	}
+	if !validSpotifyURI(uri) {
+		return errors.New("недопустимый адрес Spotify")
+	}
+	s.cmds.Add(1)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if out, err := s.ctl(ctx, "play", uri); err != nil {
+		log.Printf("spotify: play %s: %v; вывод: %s", uri, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("Soloist не включил: %w", err)
+	}
+	if s.OnPlay != nil {
+		s.OnPlay()
+	}
+	return nil
+}
+
+// djURI — плейлист «DJ» Spotify: один на всех.
+const djURI = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq"
+
+func (s *Spotify) PlayDJ(ctx context.Context) error { return s.PlayURI(ctx, djURI) }
+
+// PlayLiked включает «Любимые треки». Адрес узнаём, когда они хоть раз играли в Spotify.
+func (s *Spotify) PlayLiked(ctx context.Context) error {
+	u := s.Liked()
+	if u == "" {
+		return errors.New("не знаю, где ваши любимые треки: включите их один раз в приложении Spotify на эту колонку, дальше Джарвис запомнит")
+	}
+	return s.PlayURI(ctx, u)
+}
+
+// PlayRadio включает радио по текущему треку: после него Spotify сам подбирает похожие.
+func (s *Spotify) PlayRadio(ctx context.Context) error {
+	s.mu.Lock()
+	u := s.last.URI
+	s.mu.Unlock()
+	if id, ok := strings.CutPrefix(u, "spotify:track:"); ok && id != "" {
+		return s.PlayURI(ctx, "spotify:station:track:"+id)
+	}
+	return errors.New("сейчас не играет трек, по которому можно включить радио")
+}
+
+// parseSpotifyQueue разбирает `soloist ctl queue --json`: поле upcoming — следующие треки.
+func parseSpotifyQueue(b []byte) ([]Track, error) {
+	if i, j := bytes.IndexByte(b, '{'), bytes.LastIndexByte(b, '}'); i >= 0 && j > i {
+		b = b[i : j+1]
+	}
+	var raw struct {
+		Upcoming []struct {
+			Item struct {
+				URI         string `json:"uri"`
+				Decorations struct {
+					Identity struct {
+						Name string `json:"name"`
+					} `json:"identity"`
+					Visual struct {
+						Cover []struct {
+							URL  string `json:"url"`
+							Size string `json:"size"`
+						} `json:"cover"`
+					} `json:"visual_identity"`
+					Creators []struct {
+						Entity soloistIdentity `json:"entity"`
+					} `json:"creators"`
+				} `json:"decorations"`
+			} `json:"item"`
+		} `json:"upcoming"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Track, 0, len(raw.Upcoming))
+	for _, u := range raw.Upcoming {
+		d := u.Item.Decorations
+		t := Track{ID: u.Item.URI, Title: d.Identity.Name}
+		var names []string
+		for _, c := range d.Creators {
+			if n := c.Entity.Decorations.Identity.Name; n != "" {
+				names = append(names, n)
+			}
+		}
+		t.Author = strings.Join(names, ", ")
+		for _, c := range d.Visual.Cover {
+			if c.Size == "small" || t.Art == "" {
+				t.Art = c.URL
+			}
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// RefreshQueue снимает очередь Soloist и кладёт её в снимок для панели.
+func (s *Spotify) RefreshQueue(ctx context.Context) {
+	if !s.Installed() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := s.ctl(ctx, "queue", "--json")
+	var q []Track
+	if err == nil {
+		q, err = parseSpotifyQueue(out)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.next = nil
+		return
+	}
+	s.next, s.nextFor = q, s.last.URI
+}
+
+func (s *Spotify) refreshQueueIfChanged(ctx context.Context, uri string) {
+	s.mu.Lock()
+	same := s.nextFor == uri
+	s.mu.Unlock()
+	if !same {
+		s.RefreshQueue(ctx)
 	}
 }

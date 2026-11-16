@@ -38,6 +38,7 @@ const (
 
 type Track struct {
 	ID, Title, Author string
+	Art               string `json:",omitempty"` // обложка (у Spotify)
 }
 
 // ytStream — дорожка: ссылка, с каким User-Agent её качать, размер и длительность.

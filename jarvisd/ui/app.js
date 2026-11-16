@@ -1783,6 +1783,8 @@ function viewPlayer() {
     music({ action: a, query: q }).then((ok) => ok && a === "queue" && toast("Добавлено в очередь"));
   });
   const onRow = (e) => {
+    const spb = e.target.closest("[data-sp]");
+    if (spb) { music({ action: "spotify", query: spb.dataset.sp }); return; }
     const rm = e.target.closest("[data-un]");
     if (rm) { e.stopPropagation(); music({ action: "unqueue", index: +rm.dataset.un }); return; }
     const r = e.target.closest(".qrow[data-id]");
@@ -1812,9 +1814,9 @@ function swapText(el, text) {
   el.classList.remove("swap"); void el.offsetWidth; el.classList.add("swap");
 }
 
-function qrowHtml(t, { badge = "", cur = false, qi = null, art = "" } = {}) {
+function qrowHtml(t, { badge = "", cur = false, qi = null, art = "", ro = false } = {}) {
   const img = art || (t.ID && !/^\d+$/.test(t.ID) ? `https://i.ytimg.com/vi/${esc(t.ID)}/mqdefault.jpg` : "");
-  return `<div class="qrow${cur ? " cur" : ""}" data-id="${esc(t.ID)}"${qi != null ? ` data-qi="${qi}"` : ""}${cur ? "" : ` role="button" tabindex="0"`}>
+  return `<div class="qrow${cur || ro ? " cur" : ""}"${ro ? "" : ` data-id="${esc(t.ID)}"`}${qi != null ? ` data-qi="${qi}"` : ""}${cur || ro ? "" : ` role="button" tabindex="0"`}>
     ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : `<span class="qph"></span>`}<span class="tt"><b>${esc(t.Title || "…")}</b><span>${esc(t.Author || "")}</span></span>${badge}
     ${qi != null ? `<button class="ib" type="button" data-un="${qi}" aria-label="Убрать из очереди" data-tip="Убрать">${icon("x")}</button>` : ""}</div>`;
 }
@@ -1847,15 +1849,22 @@ function drawPlayerPage() {
   $("#pl-radio").classList.toggle("hidden", ya);
   $("#pl-copy").classList.toggle("hidden", !link);
   let qh;
-  if (ya) qh = on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>`, art: M.cover }) + `${sp ? `<p class="empty">Очередью Spotify управляет приложение Spotify. Здесь — «Джарвис, следующий трек» и «пауза».</p>` : `<p class="empty">Очередью Яндекс Музыки управляет Алиса: «Алиса, следующий трек», «Алиса, включи похожее».</p>`}` : "";
+  const spBtns = `<div class="row sp-quick"><button class="btn" type="button" data-sp="liked">♥ Любимые</button><button class="btn" type="button" data-sp="radio"${on ? "" : " disabled"}>Радио по треку</button><button class="btn" type="button" data-sp="dj">DJ</button></div>`;
+  if (sp) {
+    const next = M.next || [];
+    qh = (on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>`, art: M.cover }) : "") +
+      next.map((x, i) => qrowHtml(x, { ro: true, art: x.Art, badge: `<span class="badge">${i + 1}</span>` })).join("") +
+      (on && !next.length ? `<p class="empty">Дальше очередь Spotify пока пуста.</p>` : "") + spBtns;
+  } else if (ya) qh = on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>`, art: M.cover }) + `<p class="empty">Очередью Яндекс Музыки управляет Алиса: «Алиса, следующий трек», «Алиса, включи похожее».</p>` : "";
   else {
     const next = M.next || [], nq = M.queue || 0;
     qh = (on ? qrowHtml(t, { cur: true, badge: `<span class="np-eq q-eq" aria-hidden="true"><i></i><i></i><i></i></span>` }) : "") +
       next.map((x, i) => qrowHtml(x, { qi: i < nq ? i : null, badge: i < nq ? `<span class="badge">${i + 1}</span>` : `<span class="badge">${M.radio ? "похожее" : "дальше"}</span>` })).join("");
   }
   if (!qh) qh = `<p class="empty">Очередь пуста. Найдите трек выше и нажмите «+» или скажите «Джарвис, добавь в очередь …»</p>`;
+  if (!sp && S?.spotify?.installed) qh += spBtns;
   if ($("#pl-queue").dataset.h !== qh) { $("#pl-queue").dataset.h = qh; $("#pl-queue").innerHTML = qh; }
-  $("#pl-qmeta").textContent = ya ? nm : `${M.queue || 0} в очереди${M.radio ? " · дальше похожее" : ""}`;
+  $("#pl-qmeta").textContent = sp ? `Spotify · дальше ${(M.next || []).length}` : ya ? nm : `${M.queue || 0} в очереди${M.radio ? " · дальше похожее" : ""}`;
   const hist = (M.history || []).filter((x) => !(on && !ya && x.ID === t.ID)).slice(0, 12);
   const hh = hist.length ? hist.map((x) => qrowHtml(x)).join("") : `<p class="empty">Здесь появится то, что включали с YouTube</p>`;
   if ($("#pl-hist").dataset.h !== hh) { $("#pl-hist").dataset.h = hh; $("#pl-hist").innerHTML = hh; }

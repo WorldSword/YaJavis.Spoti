@@ -668,6 +668,12 @@ func main() {
 	go engine.alice.Run(context.Background())
 	engine.spotify = NewSpotify()
 	engine.spotify.OnPlay = engine.spotifyStarted
+	engine.spotify.SetLiked(store.Get().SpotifyLiked)
+	engine.spotify.OnLearnLiked = func(uri string) {
+		if err := store.Update(func(s *Settings) error { s.SpotifyLiked = uri; return nil }); err != nil {
+			log.Printf("spotify: не сохранил адрес любимых треков: %v", err)
+		}
+	}
 	if engine.spotify.Installed() { // без Soloist инструмент play_spotify не объявляется
 		tools.SpotifyPlay = func(ctx context.Context, query string) string {
 			inDialog := engine.InDialog()

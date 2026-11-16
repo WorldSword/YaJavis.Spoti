@@ -1417,3 +1417,4 @@ h1 { font-size: 34px; line-height: 40px; }
 /* конспект памяти Джарвиса: как написала модель, с переносами строк */
 .mem-sum { white-space: pre-wrap; font-size: 13px; line-height: 1.55; margin-top: 8px; }
 .mem-m { margin: 12px 0 0; font-size: 13px; } .mem-m small { opacity: .6; font-weight: 400; }
+.sp-quick { margin-top: 10px; }

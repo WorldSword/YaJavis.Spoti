@@ -130,7 +130,7 @@ var spotifyPanelActions = map[string]string{"pause": "pause", "resume": "resume"
 
 func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Action string  `json:"action"` // play | id | pause | resume | next | stop | seek | queue | unqueue | radio
+		Action string  `json:"action"` // play | id | pause | resume | next | stop | seek | queue | unqueue | radio | spotify (query: liked | dj | radio)
 		Query  string  `json:"query"`
 		Sec    float64 `json:"sec"`
 		Index  int     `json:"index"`
@@ -141,6 +141,16 @@ func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := w.engine.music
+	if req.Action == "spotify" { // кнопки «Любимые», «DJ», «Радио по треку»
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if msg := w.engine.playSpotifyKind(ctx, req.Query); !strings.HasPrefix(msg, "Включаю") {
+			bad(rw, strings.TrimPrefix(msg, "Не получилось: "))
+			return
+		}
+		writeJSON(rw, 200, w.musicNow())
+		return
+	}
 	if sp := w.engine.spotify; !m.Playing() && w.engine.spotifyOwns() {
 		if req.Action == "seek" {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
