@@ -42,6 +42,7 @@ type Spotify struct {
 	mu      sync.Mutex
 	last    SpotifyNow // последний удачный ответ Soloist
 	next    []Track    // следующие треки очереди Spotify
+	volSeen int        // последняя громкость Spotify плюс 1; 0 — ещё не знаем
 	nextFor string     // для какого трека снята очередь
 	liked   string     // адрес плейлиста «Любимые треки»
 	lastAt  time.Time
@@ -245,6 +246,7 @@ type SpotifyNow struct {
 	Cover, URI              string
 	ContextURI, ContextName string  // плейлист, альбом или радио, из которого играет трек
 	Pos, Dur                float64 // секунды
+	Volume                  int     // громкость Spotify 0–100; -1, если Soloist её не назвал
 }
 
 type soloistIdentity struct {
@@ -296,6 +298,7 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 		Position struct {
 			Ms float64 `json:"position_ms"`
 		} `json:"position"`
+		Volume *int `json:"volume"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return SpotifyNow{}, err
@@ -305,7 +308,10 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 	}
 	it, d := raw.Item, raw.Item.Decorations
 	now := SpotifyNow{Playing: raw.Status == "playing", Title: d.Identity.Name, URI: it.URI, Pos: raw.Position.Ms / 1000, Dur: d.Playback.DurationMs / 1000,
-		ContextURI: raw.Context.URI, ContextName: raw.Context.Decorations.Identity.Name}
+		ContextURI: raw.Context.URI, ContextName: raw.Context.Decorations.Identity.Name, Volume: -1}
+	if raw.Volume != nil {
+		now.Volume = *raw.Volume
+	}
 	if now.Title == "" && now.URI != "" {
 		now.Title = "Spotify"
 	}
@@ -381,7 +387,11 @@ func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
 	}
 	s.last, s.lastAt, s.ok = now, s.clock(), true
 	learn := s.learnLiked(now)
+	vol, changed := s.volumeChanged(now.Volume)
 	s.mu.Unlock()
+	if changed {
+		s.applyVolume(ctx, vol)
+	}
 	if learn != "" && s.OnLearnLiked != nil {
 		s.OnLearnLiked(learn)
 	}
@@ -622,5 +632,26 @@ func (s *Spotify) refreshQueueIfChanged(ctx context.Context, uri string) {
 	s.mu.Unlock()
 	if !same {
 		s.RefreshQueue(ctx)
+	}
+}
+
+// volumeChanged — громкость в Spotify сменили с прошлого опроса. Первое значение только запоминаем:
+// при запуске громкость колонки не трогаем. Вызывать под s.mu.
+func (s *Spotify) volumeChanged(v int) (int, bool) {
+	if v < 0 || v > 100 {
+		return v, false
+	}
+	prev := s.volSeen
+	s.volSeen = v + 1 // +1: ноль значения означает «ещё не знаем»
+	return v, prev != 0 && prev != v+1
+}
+
+// applyVolume переносит громкость из приложения Spotify на колонку: Soloist запущен с APULSE_EXTERNAL_VOLUME=1
+// и сам звук не регулирует, поэтому ALSA Master ставим мы.
+func (s *Spotify) applyVolume(ctx context.Context, v int) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if out, err := s.exec(ctx, "amixer", "sset", "Master", strconv.Itoa(v)+"%"); err != nil {
+		log.Printf("spotify: громкость %d%% не применилась: %v %s", v, err, strings.TrimSpace(string(out)))
 	}
 }

@@ -27,7 +27,7 @@ func TestParseSpotifyNow(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := SpotifyNow{Playing: true, Title: "Numb", Artist: "Linkin Park, Jay-Z", Cover: "https://i.scdn.co/image/x",
-		URI: "spotify:track:abc", ContextURI: "spotify:playlist:p", ContextName: "Liked Songs", Pos: 42, Dur: 185}
+		URI: "spotify:track:abc", ContextURI: "spotify:playlist:p", ContextName: "Liked Songs", Pos: 42, Dur: 185, Volume: 56}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("разобрано %+v, ждали %+v", got, want)
 	}

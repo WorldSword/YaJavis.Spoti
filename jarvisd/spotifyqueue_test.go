@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -233,5 +234,47 @@ func TestPostMusicSpotifyKinds(t *testing.T) {
 	}
 	if got := r.played(); got[len(got)-1] != "spotify:playlist:p" {
 		t.Errorf("любимые: %v", got)
+	}
+}
+
+// Громкость из приложения Spotify (телефон, ПК): Soloist о ней знает, а ALSA Master сам не меняется.
+func TestSpotifyVolumeFollowsApp(t *testing.T) {
+	vol := 50
+	var mu sync.Mutex
+	var mixer []string
+	exec := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if name == "amixer" {
+			mixer = append(mixer, strings.Join(args, " "))
+			return nil, nil
+		}
+		n := len(args)
+		if n >= 2 && args[n-2] == "now" && args[n-1] == "--json" {
+			return []byte(strings.Replace(spotifyNowFixture, `"volume":56`, `"volume":`+strconv.Itoa(vol), 1)), nil
+		}
+		return nil, nil
+	}
+	sp := newSpotifyAt(fakeSoloistRoot(t), exec)
+	now := func() {
+		if _, err := sp.Now(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now() // первый опрос: громкость колонки не трогаем
+	now()
+	if len(mixer) != 0 {
+		t.Fatalf("без изменений громкость не трогаем: %v", mixer)
+	}
+	vol = 44 // сдвинули ползунок в приложении Spotify
+	now()
+	now() // повторный опрос с тем же значением ничего не делает
+	if len(mixer) != 1 || mixer[0] != "sset Master 44%" {
+		t.Errorf("ALSA Master: %v", mixer)
+	}
+	vol = 38
+	now()
+	if len(mixer) != 2 || mixer[1] != "sset Master 38%" {
+		t.Errorf("ALSA Master: %v", mixer)
 	}
 }
