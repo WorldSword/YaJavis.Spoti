@@ -143,7 +143,14 @@ func (w *Web) postMusic(rw http.ResponseWriter, r *http.Request) {
 	m := w.engine.music
 	if sp := w.engine.spotify; !m.Playing() && w.engine.spotifyOwns() {
 		if req.Action == "seek" {
-			bad(rw, "у Spotify перемотка с панели недоступна")
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := sp.Seek(ctx, req.Sec); err != nil {
+				bad(rw, err.Error())
+				return
+			}
+			_, _ = sp.Now(ctx)
+			writeJSON(rw, 200, w.musicNow())
 			return
 		}
 		if act, ok := spotifyPanelActions[req.Action]; ok {

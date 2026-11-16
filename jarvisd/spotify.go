@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -284,6 +285,40 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 	return now, nil
 }
 
+// ctl — `soloist ctl -w 127.0.0.1:9090 <args>` с библиотеками Soloist; если системный загрузчик не подходит,
+// запасной запуск через загрузчик из lib64 (как в scripts/status.sh Soloist).
+func (s *Spotify) ctl(ctx context.Context, args ...string) ([]byte, error) {
+	bin, lib := path.Join(s.root, "bin", "soloist"), path.Join(s.root, "lib64")
+	ctl := append([]string{"ctl", "-w", "127.0.0.1:9090"}, args...)
+	env := "LD_LIBRARY_PATH=" + lib
+	out, err := s.exec(ctx, "env", append([]string{env, bin}, ctl...)...)
+	if ld := path.Join(lib, "ld-linux-aarch64.so.1"); err != nil {
+		if _, serr := os.Stat(ld); serr == nil {
+			out, err = s.exec(ctx, "env", append([]string{env, ld, "--library-path", lib, "--argv0", bin, bin}, ctl...)...)
+		}
+	}
+	return out, err
+}
+
+// Seek — перемотка на позицию в секундах.
+func (s *Spotify) Seek(ctx context.Context, sec float64) error {
+	if !s.Installed() {
+		return errors.New("Soloist не найден на колонке")
+	}
+	if sec < 0 || sec > 24*3600 {
+		return errors.New("недопустимая позиция")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := s.ctl(ctx, "seek", strconv.FormatInt(int64(sec*1000), 10))
+	if err != nil {
+		if last := lastLine(out); last != "" {
+			return fmt.Errorf("%w (%s)", err, last)
+		}
+	}
+	return err
+}
+
 // Now — спросить Soloist, что играет, и запомнить ответ.
 func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
 	if !s.Installed() {
@@ -291,15 +326,7 @@ func (s *Spotify) Now(ctx context.Context) (SpotifyNow, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	bin, lib := path.Join(s.root, "bin", "soloist"), path.Join(s.root, "lib64")
-	ctl := []string{"ctl", "-w", "127.0.0.1:9090", "now", "--json"}
-	env := "LD_LIBRARY_PATH=" + lib
-	out, err := s.exec(ctx, "env", append([]string{env, bin}, ctl...)...)
-	if ld := path.Join(lib, "ld-linux-aarch64.so.1"); err != nil {
-		if _, serr := os.Stat(ld); serr == nil { // как в scripts/status.sh Soloist: свой загрузчик, если системный не подходит
-			out, err = s.exec(ctx, "env", append([]string{env, ld, "--library-path", lib, "--argv0", bin, bin}, ctl...)...)
-		}
-	}
+	out, err := s.ctl(ctx, "now", "--json")
 	var now SpotifyNow
 	if err == nil {
 		now, err = parseSpotifyNow(out)

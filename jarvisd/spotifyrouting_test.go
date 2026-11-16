@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -77,17 +78,40 @@ func TestPausedSpotifyDoesNotTakeVoiceFromPausedYouTube(t *testing.T) {
 	}
 }
 
-// Seek не относится к Spotify: не трогать позицию YouTube, вернуть 400.
-func TestSeekWithSpotifyIs400(t *testing.T) {
-	var calls []spotifyCall
-	w := spotifyWeb(t, fakeSoloistRoot(t), playingExec(&calls))
+// Перемотка с панели у Spotify уходит в Soloist: soloist ctl seek <мс>.
+func TestSeekWithSpotifyCallsSoloist(t *testing.T) {
+	var mu sync.Mutex
+	var seen [][]string
+	w := spotifyWeb(t, fakeSoloistRoot(t), func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		mu.Lock()
+		seen = append(seen, append([]string{name}, args...))
+		mu.Unlock()
+		return []byte(spotifyNowFixture), nil
+	})
 	if _, err := w.engine.spotify.Now(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
 	w.postMusic(rec, httptest.NewRequest(http.MethodPost, "/api/music", strings.NewReader(`{"action":"seek","sec":30}`)))
-	if rec.Code != 400 {
-		t.Errorf("seek при Spotify: код %d, ждали 400", rec.Code)
+	if rec.Code != 200 {
+		t.Fatalf("seek при Spotify: код %d: %s", rec.Code, rec.Body)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, c := range seen {
+		if n := len(c); n >= 2 && c[n-2] == "seek" && c[n-1] == "30000" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ждали вызов ... ctl seek 30000, были: %v", seen)
+	}
+	if rec2 := httptest.NewRecorder(); true {
+		w.postMusic(rec2, httptest.NewRequest(http.MethodPost, "/api/music", strings.NewReader(`{"action":"seek","sec":-5}`)))
+		if rec2.Code != 400 {
+			t.Errorf("отрицательная позиция: код %d, ждали 400", rec2.Code)
+		}
 	}
 }
 
