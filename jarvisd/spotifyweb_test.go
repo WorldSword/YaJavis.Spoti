@@ -177,15 +177,6 @@ func TestSpotifyStateNotInstalled(t *testing.T) {
 	}
 }
 
-func TestSpotifyRestartStandaloneAsksManual(t *testing.T) {
-	w := spotifyWeb(t, fakeSoloistRoot(t), nil)
-	rec := httptest.NewRecorder()
-	w.spotifyRestart(rec, httptest.NewRequest(http.MethodPost, "/api/spotify/restart", nil))
-	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "вручную") {
-		t.Errorf("автономная установка: %d %s", rec.Code, rec.Body)
-	}
-}
-
 func TestMusicNowPrefersSpotify(t *testing.T) {
 	var calls []spotifyCall
 	w := spotifyWeb(t, fakeSoloistRoot(t), playingExec(&calls))

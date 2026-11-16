@@ -186,7 +186,19 @@ func (w *Web) putSpotify(rw http.ResponseWriter, r *http.Request) {
 		writeJSON(rw, 500, map[string]any{"error": "не удалось записать настройки Soloist"})
 		return
 	}
-	writeJSON(rw, 200, w.spotifyState())
+	st := w.spotifyState()
+	if u.APIKey != nil || u.DeviceName != nil || u.ClientID != nil || u.ClientSecret != nil {
+		// Soloist читает ключи только при старте, поэтому после сохранения перезапускаем его сами
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := sp.Restart(ctx); err != nil {
+			log.Printf("spotify: перезапуск Soloist после сохранения: %v", err)
+			st["restart_error"] = "настройки сохранены, но перезапустить Soloist не получилось — перезапустите его вручную"
+		} else {
+			st["restarted"] = true
+		}
+	}
+	writeJSON(rw, 200, st)
 }
 
 func (w *Web) spotifyRestart(rw http.ResponseWriter, r *http.Request) {
@@ -195,14 +207,9 @@ func (w *Web) spotifyRestart(rw http.ResponseWriter, r *http.Request) {
 		bad(rw, "Soloist не найден на колонке")
 		return
 	}
-	yam, ok := yamRootOf(sp.Root())
-	if !ok {
-		bad(rw, "Soloist установлен без YAM: перезапустите Soloist вручную")
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, err := sp.exec(ctx, path.Join(yam, "bin", "soloist"), "restart"); err != nil {
+	if err := sp.Restart(ctx); err != nil {
 		log.Printf("spotify: перезапуск Soloist: %v", err)
 		bad(rw, "не удалось перезапустить Soloist")
 		return

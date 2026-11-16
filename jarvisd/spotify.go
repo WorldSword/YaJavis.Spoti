@@ -66,6 +66,23 @@ func osSpotifyExec(ctx context.Context, name string, args ...string) ([]byte, er
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
+// Restart перезапускает службу Soloist: через YAM или автономным soloist-cli. Служба остаётся жить после команды
+// и держала бы канал вывода, поэтому вывод команды отбрасывается.
+func (s *Spotify) Restart(ctx context.Context) error {
+	if !s.Installed() {
+		return errors.New("Soloist не найден")
+	}
+	if s.exec == nil {
+		return errors.New("нечем запускать команды")
+	}
+	args := []string{"sh", path.Join(s.root, "bin", "soloist-cli"), "restart"}
+	if yam, ok := yamRootOf(s.root); ok {
+		args = []string{path.Join(yam, "bin", "soloist"), "restart"}
+	}
+	_, err := s.exec(ctx, "sh", append([]string{"-c", `"$@" >/dev/null 2>&1 </dev/null`, "sh"}, args...)...)
+	return err
+}
+
 // Installer — установка Soloist из панели; у nil-Spotify его нет.
 func (s *Spotify) Installer() *SoloistInstaller {
 	if s == nil {

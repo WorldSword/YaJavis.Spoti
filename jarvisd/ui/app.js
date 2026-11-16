@@ -680,8 +680,8 @@ function connDefs() {
         <details class="mini"><summary>Свои Client ID и Secret (по желанию)</summary>
           <div class="f"><label for="sp-cid">Client ID</label><input id="sp-cid" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_id || "")}"></div>
           <div class="f"><label for="sp-sec">Client Secret</label><input id="sp-sec" type="password" value="" autocomplete="off" placeholder="${esc(sp.client_secret || "")}"></div></details>
-        <div class="row"><button class="btn primary" id="sp-save">Сохранить</button>${sp.yam ? `<button class="btn" id="sp-restart">Перезапустить Soloist</button>` : ""}</div>
-        <p class="note">Ключ API работает только с Spotify Premium. После смены ключа перезапустите Soloist${sp.yam ? "" : " вручную — он стоит отдельно от Яндекс-приложения"}.</p>`,
+        <div class="row"><button class="btn primary" id="sp-save">Сохранить</button><button class="btn" id="sp-restart">Перезапустить Soloist</button></div>
+        <p class="note">Ключ API работает только с Spotify Premium. Soloist перезапускается сам после «Сохранить».</p>`,
       drop: "" },
     { id: "vpn", group: "net", icon: "shield", name: "VPN для Джарвиса", about: "Через VPN идёт только сам Джарвис, Алиса — всегда напрямую. Что именно пускать через VPN — галочки ниже",
       on: !!v.set && !v.error, bad: !!v.error, need: !v.set, state: v.set ? (v.error ? "ошибка" : esc(v.name || v.host)) : "не задан",
@@ -898,7 +898,11 @@ async function connClick(e) {
       const f = { device_name: "#sp-name", api_key: "#sp-key", client_id: "#sp-cid", client_secret: "#sp-sec" }, body = {};
       for (const [k, sel] of Object.entries(f)) { const el = $(sel); if (el && el.value !== el.defaultValue) body[k] = el.value.trim(); }
       if (!Object.keys(body).length) return toast("Ничего не изменилось");
-      return act(btn, async () => { await api("PUT", "/api/spotify", body); await redraw(); }, "Сохранено — перезапустите Soloist");
+      return act(btn, async () => {
+        const r = await api("PUT", "/api/spotify", body);
+        await redraw();
+        if (r?.restart_error) throw new Error(r.restart_error);
+      }, "Сохранено, Soloist перезапущен");
     }
     case "sp-restart": return act(btn, async () => { await api("POST", "/api/spotify/restart"); await redraw(); }, "Soloist перезапускается");
     case "vless-save": return act(btn, async () => { await api("PUT", "/api/vless", { link: $("#vless").value }); $("#vless").value = ""; await redraw(); }, "Ссылка сохранена — проверьте связь");
