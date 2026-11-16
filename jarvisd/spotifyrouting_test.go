@@ -13,7 +13,7 @@ import (
 func pausedSpotifyExec(calls *[]spotifyCall) spotifyExec {
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		if name == "env" {
-			return []byte(strings.Replace(spotifyNowFixture, `"is_playing":true`, `"is_playing":false`, 1)), nil
+			return []byte(strings.Replace(spotifyNowFixture, `"status":"playing"`, `"status":"paused"`, 1)), nil
 		}
 		*calls = append(*calls, spotifyCall{name, args})
 		return nil, nil

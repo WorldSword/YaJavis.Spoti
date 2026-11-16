@@ -205,7 +205,7 @@ func spotifyRequest(text string) (string, bool) {
 	return strings.Trim(strings.Join(strings.Fields(q), " "), " ,.!?"), true
 }
 
-// SpotifyNow — что сейчас у Soloist. Имена полей JSON — по README Soloist; сверить с реальным `now --json` на колонке.
+// SpotifyNow — что сейчас у Soloist.
 type SpotifyNow struct {
 	Playing       bool
 	Title, Artist string
@@ -213,27 +213,47 @@ type SpotifyNow struct {
 	Pos, Dur      float64 // секунды
 }
 
+type soloistIdentity struct {
+	Decorations struct {
+		Identity struct {
+			Name string `json:"name"`
+		} `json:"identity"`
+	} `json:"decorations"`
+}
+
+// parseSpotifyNow разбирает `soloist ctl now --json`. Форма снята с живой колонки (Soloist 1.3.13):
+// status, item.uri, название в item.decorations.identity.name, исполнители в decorations.creators[].entity,
+// обложки в decorations.visual_identity.cover[], длительность в decorations.playback.duration_ms, позиция в position.position_ms.
 func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 	// Вывод команды может идти вместе с журналом Soloist: берём только сам объект.
 	if i, j := bytes.IndexByte(b, '{'), bytes.LastIndexByte(b, '}'); i >= 0 && j > i {
 		b = b[i : j+1]
 	}
 	var raw struct {
-		IsPlaying  bool    `json:"is_playing"`
-		ProgressMs float64 `json:"progress_ms"`
-		Item       *struct {
-			URI        string  `json:"uri"`
-			Name       string  `json:"name"`
-			DurationMs float64 `json:"duration_ms"`
-			Artists    []struct {
-				Name string `json:"name"`
-			} `json:"artists"`
-			Album struct {
-				Images []struct {
-					URL string `json:"url"`
-				} `json:"images"`
-			} `json:"album"`
+		Status string `json:"status"`
+		Item   *struct {
+			URI         string `json:"uri"`
+			Decorations struct {
+				Identity struct {
+					Name string `json:"name"`
+				} `json:"identity"`
+				Visual struct {
+					Cover []struct {
+						URL  string `json:"url"`
+						Size string `json:"size"`
+					} `json:"cover"`
+				} `json:"visual_identity"`
+				Creators []struct {
+					Entity soloistIdentity `json:"entity"`
+				} `json:"creators"`
+				Playback struct {
+					DurationMs float64 `json:"duration_ms"`
+				} `json:"playback"`
+			} `json:"decorations"`
 		} `json:"item"`
+		Position struct {
+			Ms float64 `json:"position_ms"`
+		} `json:"position"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return SpotifyNow{}, err
@@ -241,18 +261,25 @@ func parseSpotifyNow(b []byte) (SpotifyNow, error) {
 	if raw.Item == nil {
 		return SpotifyNow{}, nil
 	}
-	it := raw.Item
-	now := SpotifyNow{Playing: raw.IsPlaying, Title: it.Name, URI: it.URI, Pos: raw.ProgressMs / 1000, Dur: it.DurationMs / 1000}
+	it, d := raw.Item, raw.Item.Decorations
+	now := SpotifyNow{Playing: raw.Status == "playing", Title: d.Identity.Name, URI: it.URI, Pos: raw.Position.Ms / 1000, Dur: d.Playback.DurationMs / 1000}
 	if now.Title == "" && now.URI != "" {
 		now.Title = "Spotify"
 	}
-	names := make([]string, 0, len(it.Artists))
-	for _, a := range it.Artists {
-		names = append(names, a.Name)
+	names := make([]string, 0, len(d.Creators))
+	for _, c := range d.Creators {
+		if n := c.Entity.Decorations.Identity.Name; n != "" {
+			names = append(names, n)
+		}
 	}
 	now.Artist = strings.Join(names, ", ")
-	if len(it.Album.Images) > 0 {
-		now.Cover = it.Album.Images[0].URL
+	for _, c := range d.Visual.Cover { // «default» — 300 пикселей, хватает для карточки
+		if c.Size == "default" {
+			now.Cover = c.URL
+		}
+	}
+	if now.Cover == "" && len(d.Visual.Cover) > 0 {
+		now.Cover = d.Visual.Cover[0].URL
 	}
 	return now, nil
 }

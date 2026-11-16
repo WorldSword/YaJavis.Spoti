@@ -6,17 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
 
-// Форма JSON — предположение по README Soloist (item.uri и context.uri подтверждены, остальные поля нет):
-// сверить с реальным выводом `soloist ctl -w 127.0.0.1:9090 now --json` на колонке.
-const spotifyNowFixture = `{"is_playing":true,"progress_ms":42000,
- "item":{"uri":"spotify:track:abc","name":"Numb","duration_ms":185000,
-  "artists":[{"name":"Linkin Park"},{"name":"Jay-Z"}],
-  "album":{"images":[{"url":"https://i.scdn.co/image/x"}]}},
- "context":{"uri":"spotify:playlist:p"}}`
+// Форма JSON снята с живой колонки (`soloist ctl -w 127.0.0.1:9090 now --json`, Soloist 1.3.13).
+const spotifyNowFixture = `{"type":"playback_state","status":"playing","item":{"uri":"spotify:track:abc","entity_type":"track","decorations":{
+ "identity":{"name":"Numb"},
+ "visual_identity":{"cover":[{"url":"https://i.scdn.co/image/small","size":"small"},{"url":"https://i.scdn.co/image/x","size":"default"},{"url":"https://i.scdn.co/image/big","size":"large"}]},
+ "parent":{"entity":{"uri":"spotify:album:al","entity_type":"album","decorations":{"identity":{"name":"Meteora"}}}},
+ "creators":[{"entity":{"uri":"spotify:artist:a1","decorations":{"identity":{"name":"Linkin Park"}}}},{"entity":{"uri":"spotify:artist:a2","decorations":{"identity":{"name":"Jay-Z"}}}}],
+ "playback":{"duration_ms":185000}}},
+ "context":{"uri":"spotify:playlist:p","entity_type":"playlist","decorations":{"identity":{"name":"Liked Songs"}}},
+ "position":{"position_ms":42000,"timestamp_ms":1794846854351,"speed":1},"volume":56,"is_active":true}`
 
 func TestParseSpotifyNow(t *testing.T) {
 	got, err := parseSpotifyNow([]byte(spotifyNowFixture))
@@ -44,7 +47,7 @@ func TestParseSpotifyNowDegraded(t *testing.T) {
 			t.Errorf("%q: появился трек %+v из пустоты", in, got)
 		}
 	}
-	got, err := parseSpotifyNow([]byte(`{"is_playing":true,"item":{"uri":"spotify:episode:abc"}}`))
+	got, err := parseSpotifyNow([]byte(`{"status":"playing","item":{"uri":"spotify:episode:abc"}}`))
 	if err != nil || got.Title != "Spotify" || !got.Playing {
 		t.Errorf("подкаст без названия: %+v, %v; ждали Title «Spotify» и Playing", got, err)
 	}
@@ -90,7 +93,7 @@ func TestSpotifyActiveExpires(t *testing.T) {
 
 func TestSpotifySnapshot(t *testing.T) {
 	clk := &fakeClock{time.Unix(1000, 0)}
-	paused := `{"is_playing":false,"progress_ms":5000,"item":{"uri":"spotify:track:abc","name":"Numb","duration_ms":185000,"artists":[{"name":"Linkin Park"}]}}`
+	paused := strings.NewReplacer(`"status":"playing"`, `"status":"paused"`, `"position_ms":42000`, `"position_ms":5000`, `,{"entity":{"uri":"spotify:artist:a2","decorations":{"identity":{"name":"Jay-Z"}}}}`, ``).Replace(spotifyNowFixture)
 	s := spotifyWithNow([]byte(paused), nil, clk)
 	if _, err := s.Now(context.Background()); err != nil {
 		t.Fatal(err)
