@@ -53,3 +53,19 @@ func TestUpdateFromGitHubRelease(t *testing.T) {
 		t.Fatal("accepted release without checksum")
 	}
 }
+
+// Форк собирается как «0.9.70-spotify1»: суффикс не должен делать версию старее 0.9.70.
+func TestNewerIgnoresForkSuffix(t *testing.T) {
+	if newer("0.9.70", "0.9.70-spotify1") {
+		t.Error("0.9.70 не новее 0.9.70-spotify1")
+	}
+	if !newer("0.9.71", "0.9.70-spotify1") {
+		t.Error("0.9.71 новее 0.9.70-spotify1")
+	}
+	if newer("v0.9.70", "v0.9.70-rc1") {
+		t.Error("v0.9.70 не новее v0.9.70-rc1")
+	}
+	if got := verParts("0.9.70-spotify1"); got != [3]int{0, 9, 70} {
+		t.Errorf("verParts = %v", got)
+	}
+}

@@ -83,8 +83,12 @@ func verParts(v string) [3]int {
 	var out [3]int
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	for i, p := range strings.SplitN(v, ".", 3) {
-		n, _ := strconv.Atoi(strings.TrimRightFunc(p, func(r rune) bool { return r < '0' || r > '9' }))
-		out[i] = n
+		// берём ведущие цифры: «70-spotify1» и «70-rc1» — это 70
+		end := 0
+		for end < len(p) && p[end] >= '0' && p[end] <= '9' {
+			end++
+		}
+		out[i], _ = strconv.Atoi(p[:end])
 	}
 	return out
 }
