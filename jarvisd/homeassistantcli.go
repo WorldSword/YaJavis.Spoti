@@ -30,7 +30,9 @@ func homeAssistantCLI(configure bool) error {
 			return err
 		}
 	}
-	h := &HomeAssistant{config: func() HASettings { return cfg }, client: DirectClient}
+	proxy := probeProxy(store, "homeassistant")
+	defer proxy.Close()
+	h := &HomeAssistant{host: proxy.providers, config: func() HASettings { return cfg }, client: DirectClient}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	entities, err := h.catalog(ctx, true)

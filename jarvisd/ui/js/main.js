@@ -2,7 +2,7 @@
 import { viewProfile } from "./assistant.js";
 import { viewCharacters } from "./characters.js";
 import { CH, ST, chartsData, navPill, statsData, viewCharts } from "./charts.js";
-import { viewConnections } from "./connections.js";
+import { connOpen, viewConnections } from "./connections.js";
 import { $, $$, act, api, dirty, esc, ring, setDirty } from "./core.js";
 import { homeData, viewHome } from "./home.js";
 import { HL, LOGS, homeLogs, logsData, viewLogs } from "./logs.js";
@@ -167,6 +167,7 @@ export function route() {
   const h = location.hash.slice(1) || "home";
   const v0 = $("#view"); v0.oninput = v0.onchange = v0.onclick = null;   // обработчики прошлой страницы
   if (h.startsWith("p/")) { page = "p:" + h.slice(2); viewProfile(h.slice(2)); }
+  else if (h.startsWith("connections/")) { page = "connections"; viewConnections(); connOpen(h.slice(12)); }
   else {
     page = ["home", "player", "charts", "logs", "characters", "connections", "plugins", "speaker", "security", "training"].includes(h) ? h : "home";
     if (page === "training" && !S.settings.dev_mode) page = "security";

@@ -91,7 +91,7 @@ func main() {
 		}
 		s := store.Get()
 		p := s.ActiveProfile()
-		proxy := probeProxy(store)
+		proxy := probeProxy(store, "homeassistant")
 		defer proxy.Close()
 		if err := proxy.Apply(s.Vless); err != nil {
 			log.Fatal(err)
@@ -99,7 +99,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		probeTools := NewTools(func() string { return "" }, DirectClient)
-		probeTools.HomeAssistant = &HomeAssistant{config: func() HASettings { return s.HomeAssistant }, client: DirectClient}
+		probeTools.HomeAssistant = &HomeAssistant{host: proxy.providers, config: func() HASettings { return s.HomeAssistant }, client: DirectClient}
 		sess := NewGeminiSession(ctx, s.GeminiKey, p, russianSessionRules, probeTools, proxy.LiveClient(), &Journal{})
 		defer sess.Close()
 		if err := sess.Ready(12 * time.Second); err != nil {
@@ -582,14 +582,12 @@ func main() {
 	tools := NewTools(func() string { return store.Get().YandexToken }, &http.Client{Timeout: 10 * time.Second, Transport: proxy.TransportFor("yandex")})
 	tools.HomeAssistant = &HomeAssistant{config: func() HASettings { return store.Get().HomeAssistant }, client: &http.Client{Timeout: 15 * time.Second}}
 	tools.now = func() time.Time { s := store.Get(); return s.Now() }
-	tools.Xiaomi = &Xiaomi{store: store, dataDir: *dataDir, client: func() *http.Client { return proxy.ClientFor("xiaomi", 0) }}
-	tuyaLAN := &TuyaLAN{}
-	tools.SmartLife = &SmartLife{store: store, dataDir: *dataDir, lan: tuyaLAN, client: func() *http.Client { return proxy.ClientFor("smartlife", 30*time.Second) }}
+	tools.Xiaomi = &Xiaomi{store: store}
+	tools.SmartLife = &SmartLife{store: store}
 	tools.Use = func(ch string) bool { s := store.Get(); return s.UseHome(ch) }
 	tools.Room = func() string { return store.Get().SpeakerRoom }
 	tools.Recall = chatgptChat.Search
 	tools.MemoryEdit = chatgptChat.EditMemory
-	go tuyaLAN.Listen(func() bool { return store.Get().Tuya.SignedIn() })
 	mic := NewMic(*micSock)
 	mic.GainDB = func() int { return store.Flags().MicGainDB }
 	go mic.Run()
@@ -769,8 +767,9 @@ func main() {
 	}
 	go RunCounter(store, func() *http.Client { return updaterClient }, *dataDir)
 	pluginHost = NewPluginHost(*dataDir, PluginHooks{
-		Say:   engine.sayMusicStatus,
-		Alice: AliceText,
+		Request: coreServices(store, proxy, *dataDir),
+		Say:     engine.sayMusicStatus,
+		Alice:   AliceText,
 		Info: func() map[string]any {
 			s := store.Get()
 			p := s.ActiveProfile()

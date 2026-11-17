@@ -104,24 +104,21 @@ export function plCard(x) {
   const p = x.inst;
   const upd = p && x.version && p.version && x.version !== p.version && x.repo;
   const meta = `<div class="plg-meta">${plBadge(x.official)}${(p?.version || x.version) ? `<span>v${esc(p?.version || x.version)}</span>` : ""}
-    ${x.kind ? `<span>${PL_KIND[x.kind] || esc(x.kind)}</span>` : ""}${p ? `<span>${plSize(p.size || 0)}</span>` : ""}
-    ${x.author ? `<span>${esc(x.author)}</span>` : ""}${x.stars ? `<span>★ ${x.stars}</span>` : ""}
-    ${x.url ? `<a class="lnk" href="${esc(x.url)}" target="_blank" rel="noopener">${icon("ext")}код</a>` : ""}</div>`;
+    </div>`;
   if (!p) return `<article class="card cn plg">
     <div class="cn-h"><span class="char-av cn-av">${plIcon(x.icon)}</span><h2>${esc(x.name)}</h2></div>
     <p class="cn-t">${esc(x.description || "Без описания")}</p>${meta}
     <div class="cn-f"><span class="spacer"></span><button class="btn sm primary" type="button" data-pl-install="${esc(x.repo)}" data-id="${esc(x.id)}" data-official="${x.official ? 1 : ""}">${icon("plus")}Установить</button></div>
   </article>`;
-  const state = p.error ? `<span class="st ${p.error.startsWith("заработает") ? "warn" : "bad"}">${esc(p.error)}</span>` : !p.enabled ? `<span class="st">выключен</span>`
-    : p.running ? `<span class="st ok">${esc(p.status || "работает")}</span>` : `<span class="st warn">не запущен</span>`;
+  const state = p.error ? `<span class="st ${p.error.startsWith("заработает") ? "warn" : "bad"}">${p.error.startsWith("заработает") ? "ожидает" : "ошибка"}</span>` : !p.enabled ? `<span class="st">выключен</span>`
+    : upd ? `<span class="st warn">обновление</span>` : p.running ? `<span class="st ok">работает</span>` : `<span class="st warn">не запущен</span>`;
   return `<article class="card cn plg on" data-pl="${esc(p.id)}">
     <div class="cn-h"><span class="char-av cn-av">${plIcon(p.icon)}</span><h2>${esc(p.name)}</h2><span class="spacer"></span>
       <label class="sw" data-tip="${p.enabled ? "Выключить" : "Включить"}"><input type="checkbox" data-pl-on="${esc(p.id)}"${p.enabled ? " checked" : ""}><span class="tr"></span></label></div>
     <p class="cn-t">${esc(p.description || "")}</p>${meta}
-    <div class="cn-f plg-controls${upd ? " plg-has-update" : ""}">${state}<div class="plg-actions">
-      ${upd ? `<button class="btn sm primary" type="button" data-pl-update="${esc(p.id)}">Обновить до ${esc(x.version)}</button>` : ""}
+    <div class="cn-f plg-controls">${state}<div class="plg-actions">
       <div class="plg-edit-actions">
-      ${(p.settings || []).length ? `<button class="btn sm" type="button" data-pl-set="${esc(p.id)}">${icon("tune")}Настроить</button>` : ""}
+      <button class="btn sm" type="button" data-pl-set="${esc(p.id)}">${icon("tune")}Настроить</button>
       <button class="btn sm ghost danger" type="button" data-pl-del="${esc(p.id)}" aria-label="Удалить" data-tip="Удалить">${icon("x")}</button></div></div></div>
   </article>`;
 }
@@ -166,6 +163,9 @@ export function plSettings(id) {
   const p = plInstalled(id);
   if (!p) return;
   PL.open = id;
+  const c = plCatItem(p), upd = c?.version && c.version !== p.version;
+  const connections = { vpn: [["vpn", "Подключение VPN"]], home: [["yandex", "Яндекс Умный дом"], ["homeassistant", "Home Assistant"], ["xiaomi", "Xiaomi Home"], ["smartlife", "Smart Life"]], youtube: [["youtube", "Аккаунт YouTube"]], chatgpt: [["chatgpt", "Аккаунт ChatGPT"]] };
+  const details = [p.version && `Версия ${p.version}`, PL_KIND[p.kind] || p.kind, p.size && plSize(p.size), p.author].filter(Boolean);
   const field = (s) => {
     const v = p.values?.[s.key];
     const lab = `${esc(s.label || s.key)}${s.hint ? " " + tip(s.hint) : ""}`;
@@ -179,8 +179,11 @@ export function plSettings(id) {
   $("#pl-card").innerHTML = `<div class="cn-mh"><span class="char-av cn-av">${plIcon(p.icon)}</span><div class="char-n"><h2 id="pl-mt">${esc(p.name)}</h2>${plBadge(p.official)}</div>
       <button class="ib" type="button" data-close aria-label="Закрыть">${icon("x")}</button></div>
     <p class="cn-about">${esc(p.description || "")}</p>
+    <p class="note${p.error ? " bad" : ""}">${esc(p.error || (!p.enabled ? "Плагин выключен" : p.status || (p.running ? "Плагин работает" : "Плагин не запущен")))}</p>
+    <div class="plg-meta">${details.map((s) => `<span>${esc(s)}</span>`).join("")}${p.homepage ? `<a class="lnk" href="${esc(p.homepage)}" target="_blank" rel="noopener">${icon("ext")}Исходный код</a>` : ""}</div>
+    ${connections[id] ? `<div class="row">${connections[id].map(([conn, title]) => `<a class="btn" href="#connections/${conn}">${icon("tune")}${title}</a>`).join("")}</div>` : ""}
     <div class="cn-body plg-form">${(p.settings || []).map(field).join("")}</div>
-    <div class="row cn-foot"><span class="spacer"></span><button class="btn primary" type="button" data-pl-save="${esc(id)}">Сохранить</button></div>`;
+    <div class="row cn-foot">${upd ? `<button class="btn" type="button" data-pl-update="${esc(id)}">Обновить до ${esc(c.version)}</button>` : ""}<span class="spacer"></span>${(p.settings || []).length ? `<button class="btn primary" type="button" data-pl-save="${esc(id)}">Сохранить</button>` : `<button class="btn" type="button" data-close>Готово</button>`}</div>`;
   plShow();
 }
 
@@ -204,7 +207,7 @@ export async function plClick(e) {
   if (t.dataset.plInstall) { plInstall(t, t.dataset.plInstall, t.dataset.id, !!t.dataset.official); return; }
   if (t.dataset.plUpdate) {
     const p = plInstalled(t.dataset.plUpdate), c = p && plCatItem(p);
-    if (c) await act(t, async () => { await api("POST", "/api/plugins/install", { repo: c.repo, id: c.id }); await plLoad(); }, "Плагин обновлён");
+    if (c) await act(t, async () => { await api("POST", "/api/plugins/install", { repo: c.repo, id: c.id }); await plLoad(); if (PL.open === p.id) plSettings(p.id); }, "Плагин обновлён");
     return;
   }
   if (t.dataset.plSet) { plSettings(t.dataset.plSet); return; }
@@ -219,7 +222,8 @@ export async function plClick(e) {
   }
   if (t.dataset.plDel) {
     const p = plInstalled(t.dataset.plDel);
-    if (!confirm(`Удалить плагин «${p?.name || t.dataset.plDel}» вместе с его настройками и данными?`)) return;
+    const kept = ["home", "vpn", "youtube", "chatgpt"].includes(p?.id) ? " Подключения колонки сохранятся." : "";
+    if (!confirm(`Удалить плагин «${p?.name || t.dataset.plDel}» вместе с его отдельными настройками и данными?${kept}`)) return;
     await act(t, async () => { await api("DELETE", `/api/plugins/${encodeURIComponent(t.dataset.plDel)}`); await plLoad(); }, "Плагин удалён");
   }
 }

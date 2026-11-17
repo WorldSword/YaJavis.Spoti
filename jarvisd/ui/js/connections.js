@@ -285,7 +285,7 @@ export function drawConns() {
   // вход кодом: ждём, пока человек введёт код на сайте
   clearTimeout(drawConns.wait);
   if (defs.some((c) => c.wait)) drawConns.wait = setTimeout(async () => {
-    if (location.hash !== "#connections") return;
+    if (page !== "connections") return;
     const was = { cg: S.chatgpt.signed_in, yt: S.youtube?.account?.signed_in, xm: S.xiaomi?.signed_in, sl: S.smartlife?.signed_in };
     await reload(); drawConns();
     if (!was.sl && S.smartlife?.signed_in) toast("Smart Life подключён — ищу устройства");
@@ -307,7 +307,7 @@ export function connBody(c) {
       <div class="char-n"><h2 id="cn-mt">${esc(c.name)}</h2><span class="st ${c.bad ? "bad" : c.on ? "ok" : c.need ? "warn" : ""}">${c.state}${net?.ok ? ` · ${net.ms} мс` : ""}</span></div>
       <button class="ib" type="button" data-close aria-label="Закрыть">${icon("x")}</button></div>
     <p class="cn-about">${c.about}${c.more ? `. ${c.more}` : ""}</p>
-    <div class="cn-body">${c.body}</div>
+    <div class="cn-body">${["yandex", "homeassistant", "xiaomi", "smartlife"].includes(c.id) && S.home_plugin && !S.home_plugin.available ? `<p class="note bad">${esc(S.home_plugin.error)}. <a class="lnk" href="#plugins">Открыть плагины</a></p>` : ""}${c.body}</div>
     ${c.drop ? `<div class="row cn-foot"><span class="spacer"></span>${c.drop}</div>` : ""}`;
   for (const [id, val] of Object.entries(keep)) { const el = card.querySelector("#" + id); if (el) el.value = val; }
   // перерисовка по таймеру не должна выбивать человека из поля, где он печатает

@@ -22,12 +22,14 @@ package pluginsdk
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ToolDef — инструмент для модели: имя, описание и JSON Schema параметров.
@@ -49,29 +51,35 @@ type Init struct {
 }
 
 type msg struct {
-	ID     int64           `json:"id,omitempty"`
-	Method string          `json:"method,omitempty"`
-	Params json.RawMessage `json:"params,omitempty"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
+	Deadline int64           `json:"deadline,omitempty"`
+	ID       int64           `json:"id,omitempty"`
+	Method   string          `json:"method,omitempty"`
+	Params   json.RawMessage `json:"params,omitempty"`
+	Result   json.RawMessage `json:"result,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 type Plugin struct {
-	tools    []ToolDef
-	handlers map[string]func(json.RawMessage) (string, error)
-	command  func(text string) (bool, string)
-	onInit   func(Init)
-	onSet    func(map[string]any)
-	methods  map[string]func(json.RawMessage) (any, error)
+	tools       []ToolDef
+	handlers    map[string]func(json.RawMessage) (string, error)
+	command     func(text string) (bool, string)
+	onInit      func(Init)
+	onSet       func(map[string]any)
+	methods     map[string]func(context.Context, json.RawMessage) (any, error)
+	initialized chan struct{}
+	initOnce    sync.Once
+	running     map[int64]context.CancelFunc
 
-	wmu     sync.Mutex
-	nextID  atomic.Int64
-	pmu     sync.Mutex
-	pending map[int64]chan msg
+	wmu            sync.Mutex
+	nextID         atomic.Int64
+	pmu            sync.Mutex
+	pending        map[int64]chan msg
+	httpMu         sync.Mutex
+	httpTransports map[string]*serviceTransport
 }
 
 func New() *Plugin {
-	return &Plugin{handlers: map[string]func(json.RawMessage) (string, error){}, pending: map[int64]chan msg{}}
+	return &Plugin{handlers: map[string]func(json.RawMessage) (string, error){}, pending: map[int64]chan msg{}, initialized: make(chan struct{}), running: map[int64]context.CancelFunc{}}
 }
 
 // Tool — добавить инструмент. Вызывать до Run.
@@ -90,8 +98,13 @@ func (p *Plugin) Command(fn func(text string) (handled bool, answer string)) { p
 // Handle — свой метод протокола для того, что плагин «даёт» ядру (provides в plugin.json): например, "vpn".
 // Ответ fn уходит ядру как result, ошибка — как error. Вызывать до Run.
 func (p *Plugin) Handle(method string, fn func(params json.RawMessage) (any, error)) {
+	p.HandleContext(method, func(_ context.Context, params json.RawMessage) (any, error) { return fn(params) })
+}
+
+// HandleContext propagates deadlines and cancellation from the core.
+func (p *Plugin) HandleContext(method string, fn func(context.Context, json.RawMessage) (any, error)) {
 	if p.methods == nil {
-		p.methods = map[string]func(json.RawMessage) (any, error){}
+		p.methods = map[string]func(context.Context, json.RawMessage) (any, error){}
 	}
 	p.methods[method] = fn
 }
@@ -137,18 +150,30 @@ func (p *Plugin) notify(method string, params any) {
 }
 
 func (p *Plugin) request(method string, params any) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return p.Request(ctx, method, params)
+}
+
+// Request calls a method on the core. Cancellation also removes the pending reply.
+func (p *Plugin) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	raw, _ := json.Marshal(params)
 	id := p.nextID.Add(1)
 	ch := make(chan msg, 1)
 	p.pmu.Lock()
 	p.pending[id] = ch
 	p.pmu.Unlock()
+	defer func() { p.pmu.Lock(); delete(p.pending, id); p.pmu.Unlock() }()
 	p.write(msg{ID: id, Method: method, Params: raw})
-	m := <-ch
-	if m.Error != "" {
-		return nil, errors.New(m.Error)
+	select {
+	case m := <-ch:
+		if m.Error != "" {
+			return nil, errors.New(m.Error)
+		}
+		return m.Result, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return m.Result, nil
 }
 
 // Run — обслуживать ядро, пока оно не попросит завершиться.
@@ -177,13 +202,45 @@ func (p *Plugin) Run() {
 		if m.Method == "shutdown" {
 			return
 		}
-		go p.serve(m)
+		if m.Method == "cancel" {
+			var in struct {
+				ID int64 `json:"id"`
+			}
+			_ = json.Unmarshal(m.Params, &in)
+			p.pmu.Lock()
+			cancel := p.running[in.ID]
+			p.pmu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+			continue
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		if m.Deadline > 0 {
+			cancel()
+			ctx, cancel = context.WithDeadline(context.Background(), time.UnixMilli(m.Deadline))
+		}
+		p.pmu.Lock()
+		p.running[m.ID] = cancel
+		p.pmu.Unlock()
+		go func(m msg, ctx context.Context, cancel context.CancelFunc) {
+			defer cancel()
+			defer func() { p.pmu.Lock(); delete(p.running, m.ID); p.pmu.Unlock() }()
+			p.serve(ctx, m)
+		}(m, ctx, cancel)
 	}
 }
 
-func (p *Plugin) serve(m msg) {
+func (p *Plugin) serve(ctx context.Context, m msg) {
 	var result any
 	var errText string
+	if m.Method != "init" {
+		select {
+		case <-p.initialized:
+		case <-ctx.Done():
+			return
+		}
+	}
 	switch m.Method {
 	case "init":
 		var in Init
@@ -191,6 +248,7 @@ func (p *Plugin) serve(m msg) {
 		if p.onInit != nil {
 			p.onInit(in)
 		}
+		p.initOnce.Do(func() { close(p.initialized) })
 		result = true
 		defer p.notify("register", map[string]any{"tools": p.tools, "commands": p.command != nil})
 	case "settings":
@@ -224,7 +282,13 @@ func (p *Plugin) serve(m msg) {
 		result = map[string]any{"handled": ok, "answer": answer}
 	default:
 		if fn := p.methods[m.Method]; fn != nil {
-			r, err := fn(m.Params)
+			var r any
+			var err error
+			if ctx.Err() != nil {
+				err = ctx.Err()
+			} else {
+				r, err = fn(ctx, m.Params)
+			}
 			if err != nil {
 				errText = err.Error()
 			}

@@ -1,0 +1,20 @@
+{
+  "id": "home",
+  "name": "Умный дом",
+  "version": "1.0.0",
+  "description": "Яндекс Умный дом, Home Assistant, Xiaomi и Smart Life: устройства, сценарии и уборка комнат.",
+  "kind": "native",
+  "main": "home-{arch}",
+  "api": 1,
+  "min_core": "0.9.70",
+  "category": "home",
+  "icon": "home",
+  "provides": [
+    "homeassistant",
+    "xiaomi",
+    "smartlife",
+    "yandexhome"
+  ],
+  "author": "YaJarvis",
+  "homepage": "https://github.com/newfpv/YaJavis"
+}

@@ -102,10 +102,7 @@ func (w *Web) putHomeAssistant(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared := w.engine.tools.HomeAssistant
-	shared.mu.Lock()
-	shared.entities = nil
-	shared.fetched = time.Time{}
-	shared.mu.Unlock()
+	shared.invalidate()
 	writeJSON(rw, 200, w.haState())
 }
 func (w *Web) deleteHomeAssistant(rw http.ResponseWriter, r *http.Request) {

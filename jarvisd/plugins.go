@@ -137,10 +137,11 @@ type Plugin struct {
 
 // PluginHooks — что ядро даёт плагинам.
 type PluginHooks struct {
-	Say    func(text string)                        // сказать голосом активного ассистента
-	Alice  func(text string, silent bool) error     // запрос штатной Алисе
-	Info   func() map[string]any                    // город, комната, язык, версия
-	Client func(timeout time.Duration) *http.Client // интернет для плагинов (через VPN, если отмечено)
+	Request func(id, method string, params json.RawMessage) (any, error) // scoped core services for native providers
+	Say     func(text string)                                            // сказать голосом активного ассистента
+	Alice   func(text string, silent bool) error                         // запрос штатной Алисе
+	Info    func() map[string]any                                        // город, комната, язык, версия
+	Client  func(timeout time.Duration) *http.Client                     // интернет для плагинов (через VPN, если отмечено)
 }
 
 type PluginHost struct {
@@ -280,6 +281,8 @@ func validManifest(m PluginManifest) error {
 		return fmt.Errorf("category плагина — одна из: %s", categoryIDs())
 	case slices.Contains(m.Provides, "vpn") && m.Kind != "native":
 		return errors.New("провайдер VPN должен быть нативным плагином")
+	case m.Kind != "native" && (slices.Contains(m.Provides, "homeassistant") || slices.Contains(m.Provides, "xiaomi") || slices.Contains(m.Provides, "smartlife") || slices.Contains(m.Provides, "yandexhome")):
+		return errors.New("провайдер интеграции должен быть нативным плагином")
 	case m.Main == "" || strings.Contains(m.Main, "..") || path.IsAbs(m.Main) || strings.ContainsAny(m.Main, `\`):
 		return errors.New("main плагина — имя файла внутри архива")
 	case m.API > pluginAPI:
@@ -937,8 +940,10 @@ func (a *PluginAuto) needed(settings map[string]any) bool {
 				return true
 			}
 		case map[string]any:
-			if len(v) > 0 {
-				return true
+			for _, value := range v {
+				if (&PluginAuto{Settings: []string{"value"}}).needed(map[string]any{"value": value}) {
+					return true
+				}
 			}
 		case []any:
 			if len(v) > 0 {

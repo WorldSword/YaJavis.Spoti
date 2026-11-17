@@ -146,7 +146,13 @@ func TestGeminiSessionProtocol(t *testing.T) {
 func TestGeminiHomeArgs(t *testing.T) {
 	got := geminiHomeArgs(map[string]any{"device_ids": []any{"a"}, "on": true,
 		"modes": []any{"work_speed=turbo"}, "toggles": []any{"pause=true"}, "ranges": []any{"temperature=22"}})
-	var a homeArgs
+	var a struct {
+		DeviceIDs []string `json:"device_ids"`
+		On        *bool
+		Modes     map[string]string
+		Toggles   map[string]bool
+		Ranges    map[string]float64
+	}
 	if err := json.Unmarshal([]byte(got), &a); err != nil {
 		t.Fatalf("%s: %v", got, err)
 	}

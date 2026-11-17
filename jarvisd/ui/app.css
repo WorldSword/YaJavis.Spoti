@@ -1444,6 +1444,7 @@ h1 { font-size: 34px; line-height: 40px; }
 .plg { cursor: default; }
 .plg .cn-h { align-items: center; }
 .plg .cn-h .sw { margin: 0; }
+.plg .cn-t { min-height: 40px; }
 .plg-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12.5px; color: var(--fg3); }
 .plg-meta .lnk { display: inline-flex; align-items: center; gap: 4px; }
 .plg-meta .ic, .plg-b .ic { width: 13px; height: 13px; }
@@ -1451,12 +1452,10 @@ h1 { font-size: 34px; line-height: 40px; }
 .plg-b.ok { color: var(--ok); background: var(--ok-soft); }
 .plg-b.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .plg .plg-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.plg .plg-controls > .st { white-space: normal; overflow-wrap: anywhere; }
+.plg .plg-controls > .st { white-space: nowrap; }
 .plg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .plg-edit-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .plg-actions .btn { white-space: nowrap; }
-.plg .plg-has-update { grid-template-columns: minmax(0, 1fr); }
-.plg-has-update .plg-actions { justify-self: end; max-width: 100%; }
 .plg-empty { display: grid; justify-items: center; gap: 10px; padding: 40px 24px; text-align: center; }
 .plg-empty > .ic { width: 32px; height: 32px; color: var(--acc); }
 .plg-empty h2 { margin: 0; font-size: 18px; }

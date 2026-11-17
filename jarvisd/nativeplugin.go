@@ -29,11 +29,12 @@ import (
 const nativeLineMax = 4 << 20
 
 type pluginMsg struct {
-	ID     int64           `json:"id,omitempty"`
-	Method string          `json:"method,omitempty"`
-	Params json.RawMessage `json:"params,omitempty"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
+	Deadline int64           `json:"deadline,omitempty"`
+	ID       int64           `json:"id,omitempty"`
+	Method   string          `json:"method,omitempty"`
+	Params   json.RawMessage `json:"params,omitempty"`
+	Result   json.RawMessage `json:"result,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 type nativePlugin struct {
@@ -191,6 +192,20 @@ func (n *nativePlugin) handle(m pluginMsg) {
 	case "alice":
 		ok := n.host.hooks.Alice != nil && strings.TrimSpace(p.Text) != "" && n.host.hooks.Alice(clip(p.Text, 300), p.Silent) == nil
 		result = ok
+	case "core":
+		var req struct {
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(m.Params, &req) != nil || n.host.hooks.Request == nil {
+			errText = "метод ядра недоступен"
+		} else {
+			var err error
+			result, err = n.host.hooks.Request(n.p.Manifest.ID, req.Method, req.Params)
+			if err != nil {
+				errText = err.Error()
+			}
+		}
 	default:
 		errText = "неизвестный метод " + m.Method
 	}
@@ -236,7 +251,11 @@ func (n *nativePlugin) request(ctx context.Context, method string, params any) (
 	done := n.done
 	n.mu.Unlock()
 	defer func() { n.mu.Lock(); delete(n.pending, id); n.mu.Unlock() }()
-	if err := n.send(pluginMsg{ID: id, Method: method, Params: raw}); err != nil {
+	var deadline int64
+	if d, ok := ctx.Deadline(); ok {
+		deadline = d.UnixMilli()
+	}
+	if err := n.send(pluginMsg{ID: id, Method: method, Params: raw, Deadline: deadline}); err != nil {
 		return nil, err
 	}
 	select {
@@ -248,6 +267,7 @@ func (n *nativePlugin) request(ctx context.Context, method string, params any) (
 	case <-done:
 		return nil, errors.New("плагин завершился")
 	case <-ctx.Done():
+		go n.send(pluginMsg{Method: "cancel", Params: json.RawMessage(fmt.Sprintf(`{"id":%d}`, id))})
 		return nil, ctx.Err()
 	}
 }

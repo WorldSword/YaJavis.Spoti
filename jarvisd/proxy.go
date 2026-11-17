@@ -72,8 +72,9 @@ type Proxy struct {
 	tun  *vpnTunnel // nil with a configured link means unavailable, never direct
 	err  string
 
-	cleanup func()
-	applyMu sync.Mutex
+	cleanup   func()
+	providers *PluginHost // CLI-only providers; daemon uses the shared pluginHost
+	applyMu   sync.Mutex
 	// provider — плагин VPN сейчас; nil и причина, если его нет; starting — вот-вот запустится, стоит подождать
 	provider func() (prov vpnProvider, why string, starting bool)
 
@@ -399,9 +400,12 @@ func (h *PluginHost) VPNProvider() (vpnProvider, string, bool) {
 }
 
 // CLI probes load only the network provider, without starting unrelated plugins.
-func probeProxy(store *Store) *Proxy {
+func probeProxy(store *Store, capabilities ...string) *Proxy {
 	p := &Proxy{}
 	h := NewPluginHost(filepath.Dir(store.path), PluginHooks{}, func() *http.Client { return DirectClient })
+	h.hooks.Request = coreServices(store, p, filepath.Dir(store.path))
+	h.hooks.Info = func() map[string]any { return map[string]any{"probe": true} }
+	p.providers = h
 	var state map[string]*pluginState
 	if b, err := os.ReadFile(h.statePath()); err == nil {
 		_ = json.Unmarshal(b, &state)
@@ -425,6 +429,11 @@ func probeProxy(store *Store) *Proxy {
 		for _, cap := range m.Provides {
 			if cap == "vpn" {
 				found = true
+			}
+			for _, needed := range capabilities {
+				if cap == needed {
+					found = true
+				}
 			}
 		}
 		if !found {
