@@ -16,6 +16,7 @@ name = "jarvis"
 path = "src/main.rs"
 
 [dependencies]
+jarvis-spotify = { path = "../modules/spotify" }
 jarvis-plugin-sdk = { path = "../plugin-sdk", features = ["process"] }
 jarvis-chatgpt = { path = "../modules/chatgpt" }
 jarvis-cloud = { path = "../modules/cloud", features = ["openai", "gemini", "grok", "elevenlabs"] }

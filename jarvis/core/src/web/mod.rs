@@ -20,6 +20,7 @@ mod home_vendor;
 mod keys;
 mod memory;
 mod music;
+mod soloist;
 mod plugins;
 pub mod state;
 mod talk;
@@ -56,6 +57,7 @@ pub struct Web {
     pub telemetry: Arc<crate::telemetry::Telemetry>,
     pub updater: crate::updates::Updater,
     wake_update:Arc<tokio::sync::Mutex<()>>,
+    soloist_update: Arc<tokio::sync::Mutex<()>>,
     fails: Mutex<HashMap<IpAddr, auth::Fail>>,
     reset_at: Mutex<Option<Instant>>,
 }
@@ -66,7 +68,7 @@ impl Web {
     pub fn new(store: Store, plugins: Arc<Host>, proxy: Arc<Proxy>, data_dir: PathBuf, engine: Arc<crate::engine::Engine>) -> App {
         let telemetry=crate::telemetry::Telemetry::start(data_dir.clone());
         let updater = crate::updates::Updater::new(data_dir.clone(), store.clone(), plugins.clone());
-        Arc::new(Web { store, plugins, proxy, engine, data_dir, telemetry, updater, wake_update:Arc::default(), started: Instant::now(), fails: Mutex::default(), reset_at: Mutex::default() })
+        Arc::new(Web { store, plugins, proxy, engine, data_dir, telemetry, updater, wake_update:Arc::default(), soloist_update: Arc::default(), started: Instant::now(), fails: Mutex::default(), reset_at: Mutex::default() })
     }
 }
 
@@ -172,6 +174,10 @@ pub fn router(app: App) -> Router {
         .route("/api/journal", get(talk::journal))
         .route("/api/speaker/volume", post(talk::volume))
         .route("/api/music", get(music::get).post(music::post))
+        .route("/api/spotify/soloist", get(soloist::get).put(soloist::put))
+        .route("/api/spotify/soloist/restart", post(soloist::restart_now))
+        .route("/api/spotify/soloist/check", post(soloist::check))
+        .route("/api/spotify/soloist/tune", post(soloist::tune_now))
         .route("/api/youtube", put(music::set_cookies).delete(music::clear_cookies))
         .route("/api/youtube/login", post(music::youtube_login).delete(music::youtube_logout))
         .route("/api/youtube/library", get(music::youtube_library))

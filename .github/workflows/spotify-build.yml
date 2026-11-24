@@ -11,6 +11,19 @@ env:
   CORE_VERSION: 0.10.19
   ASSETS_BRANCH: spotify-assets
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:panel
+      - run: rustup update stable
+      - run: cargo test --locked -p jarvis -p jarvis-spotify
+        working-directory: jarvis
   station:
     strategy:
       fail-fast: false
@@ -54,7 +67,7 @@ jobs:
           path: build/release/
           if-no-files-found: error
   assets:
-    needs: station
+    needs: [station, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

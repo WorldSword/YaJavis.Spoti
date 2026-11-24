@@ -43,6 +43,10 @@ pub struct Soloist {
 }
 
 impl Soloist {
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
     /// Первая папка, где лежит scripts/control.sh; None, если Soloist не найден.
     pub fn find(extra: Option<&str>) -> Option<Self> {
         let mut roots: Vec<PathBuf> = extra.filter(|d| !d.is_empty()).map(PathBuf::from).into_iter().collect();

@@ -1,5 +1,6 @@
 <script>
   import { untrack } from "svelte";
+  import SoloistSettings from "./SoloistSettings.svelte";
   import {
     installConnectionPlugin, openRelatedService, removeConnectionPlugin, saveConnectionPlugin,
     setConnectionPluginEnabled, updateConnectionPlugin,
@@ -71,6 +72,10 @@
     {#if url}<a class="lnk" href={url} target="_blank" rel="noopener">{@html icon("ext")}код</a>{/if}
   </div>
 {/snippet}
+
+{#if item.id === "spotify"}
+  <SoloistSettings />
+{/if}
 
 {#if !installed}
   <p class="cn-about">{plugin.description || "Без описания"}</p>

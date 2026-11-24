@@ -1296,6 +1296,7 @@ dependencies = [
  "jarvis-dsp",
  "jarvis-native-plugins",
  "jarvis-plugin-sdk",
+ "jarvis-spotify",
  "jarvis-station",
  "jiff",
  "libc",
