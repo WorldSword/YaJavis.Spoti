@@ -1,0 +1,218 @@
+.prerequisite {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  color: var(--dim);
+  line-height: 1.65;
+  padding: 3px 0 18px;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--acc);
+  flex: none;
+  margin-top: 8px;
+}
+
+.scanStatus {
+  font-size: 14px;
+  color: var(--dim);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.radar {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.radar i {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--acc);
+  border-radius: 50%;
+  animation: radar 1.6s var(--ease) infinite;
+}
+
+.radar i + i {
+  animation-delay: .8s;
+}
+
+@keyframes radar {
+  from {
+    transform: scale(.3);
+    opacity: 1;
+  }
+
+  to {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.speaker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: #ffffff04;
+  border-radius: 15px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg);
+  font: inherit;
+  transition: border-color .2s, transform .2s var(--spring);
+  animation: revealSpeaker .45s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+.speaker:hover:not(:disabled) {
+  border-color: #f77b2c66;
+  transform: translateY(-2px);
+}
+
+.speaker:disabled {
+  cursor: default;
+}
+
+.speaker.unavailable {
+  opacity: .7;
+}
+
+@keyframes revealSpeaker {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(.995);
+  }
+}
+
+.speakerDetails {
+  flex: 1;
+  min-width: 0;
+}
+
+.speakerDetails b {
+  font-size: 16px;
+}
+
+.speakerDetails small {
+  display: block;
+  font-size: 14px;
+  color: var(--dim2);
+  margin-top: 3px;
+}
+
+.ring {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  border: 4px solid #ffffff1f;
+  position: relative;
+}
+
+.ring.installed {
+  border-color: var(--acc);
+  box-shadow: 0 0 16px #f77b2c33;
+}
+
+.ring::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #ffffff10;
+}
+
+.badge {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.badge.ready {
+  color: var(--ok);
+  background: #48cb8b12;
+}
+
+.badge.unsupported {
+  color: var(--bad);
+  background: #fa8e8e12;
+}
+
+.badge.installed {
+  color: var(--acc);
+  background: #f77b2c12;
+}
+
+.arrow {
+  color: var(--dim2);
+  font-size: 18px;
+  transition: transform .2s var(--spring), color .2s;
+}
+
+.speaker:hover:not(:disabled) .arrow {
+  color: var(--acc);
+  transform: translateX(3px);
+}
+
+.manual {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+
+.addressForm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.addressForm input {
+  flex: 1;
+  width: 0;
+}
+
+.helpLink {
+  display: inline-block;
+  color: var(--dim2);
+  font-size: 14px;
+  margin-top: 18px;
+}
+
+.helpLink:hover {
+  color: var(--fg);
+}
+
+@media (max-height: 760px) and (min-width: 801px) {
+  .prerequisite {
+    padding-bottom: 12px;
+  }
+}
+
+@media (max-width: 800px) {
+  .prerequisite {
+    padding-bottom: 8px;
+  }
+
+  .manual {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .helpLink {
+    margin-top: 12px;
+  }
+}

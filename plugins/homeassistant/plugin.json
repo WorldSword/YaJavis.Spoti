@@ -1,0 +1,16 @@
+{
+  "id": "homeassistant",
+  "name": "Home Assistant",
+  "version": "1.0.1",
+  "description": "Управление устройствами Home Assistant и уборка выбранных комнат.",
+  "kind": "rust",
+  "main": "plugin",
+  "api": 1,
+  "category": "home",
+  "icon": "home",
+  "provides": [
+    "homeassistant"
+  ],
+  "author": "YaJarvis",
+  "min_core": "0.10.0"
+}

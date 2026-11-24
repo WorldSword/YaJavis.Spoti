@@ -1,0 +1,89 @@
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.heading small {
+  display: block;
+  margin-top: 2px;
+  color: var(--fg2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.value b {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+
+.value span {
+  margin-left: 4px;
+  color: var(--fg2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chart {
+  position: relative;
+  height: 150px;
+  margin-top: 10px;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.gridLine {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.axis {
+  fill: var(--fg3);
+  font: 10.5px var(--mono);
+}
+
+.line {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.area {
+  fill: url(#spark-fill);
+}
+
+.cross {
+  stroke: var(--fg3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.point {
+  fill: var(--acc);
+  stroke: var(--card);
+  stroke-width: 3;
+}
+
+.tooltip {
+  position: absolute;
+  top: -6px;
+  left: clamp(54px, var(--point-x), 100% - 54px);
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: #26262f;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}

@@ -1,0 +1,226 @@
+{
+ "alice_command": {
+  "description": "Передать команду штатной Алисе на этой колонке — она выполнит всё, что подключено к Яндексу: свет, шторы, розетки, сценарии, таймеры, будильники, напоминания. Таймеры, будильники и напоминания на этой колонке ставятся только так — никогда не отвечай, что не умеешь их ставить. Пиши команду коротко, как её сказали бы Алисе: «закрой шторы», «поставь таймер на 10 минут».",
+  "name": "alice_command",
+  "parameters": {
+   "properties": {
+    "command": {
+     "description": "команда для Алисы, без её имени",
+     "type": "string"
+    }
+   },
+   "required": [
+    "command"
+   ],
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "edit_memory": {
+  "description": "Изменить долгую память о хозяине. Вызывай, когда хозяин просит что-то забыть («забудь, что…», «не запоминай это», «сотри разговор про…»), исправить («меня зовут не Сергей, а Павел») или запомнить («запомни, что…»). Исправление — это forget старого и remember нового в одном вызове.",
+  "name": "edit_memory",
+  "parameters": {
+   "properties": {
+    "forget": {
+     "description": "что забыть, своими словами: «что хозяина зовут Сергей»; пусто — ничего не забывать",
+     "type": "string"
+    },
+    "remember": {
+     "description": "что запомнить или верное значение: «хозяина зовут Павел»; пусто — ничего",
+     "type": "string"
+    },
+    "words": {
+     "description": "1–3 слова, по которым найти и удалить из архива реплики про забываемое, например «Сергей»; только слова, которые точно про это",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "home_assistant": {
+  "description": "Устройства сервера Home Assistant (только они; Xiaomi Home и Smart Life — своими инструментами): состояние, включение, выключение, пылесос и уборка выбранной комнаты. Комнату передавай по имени; без настроенного соответствия уборку не запускай.",
+  "name": "home_assistant",
+  "parameters": {
+   "properties": {
+    "action": {
+     "enum": [
+      "status",
+      "turn_on",
+      "turn_off",
+      "start",
+      "pause",
+      "stop",
+      "return_to_base",
+      "clean_room"
+     ],
+     "type": "string"
+    },
+    "entity_id": {
+     "description": "реальный entity_id из списка устройств; для clean_room можно не указывать, если соответствие единственное",
+     "type": "string"
+    },
+    "room": {
+     "description": "название комнаты для уборки",
+     "type": "string"
+    }
+   },
+   "required": [
+    "action"
+   ],
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "recall_conversation": {
+  "description": "Вспомнить прошлые разговоры с хозяином: ищет по архиву всех разговоров на колонке и по летописи старых месяцев, возвращает реплики дословно, с датой, временем и тем, кто что сказал. Вызывай сам, без просьбы «вспомни», когда хозяин ссылается на прошлое («тот рецепт», «как я тебе рассказывал», «о чём говорили вчера», «помнишь…»), а в памяти выше этого нет. Не выдумывай прошлое — сначала поищи.",
+  "name": "recall_conversation",
+  "parameters": {
+   "properties": {
+    "date": {
+     "description": "день в формате ГГГГ-ММ-ДД, если хозяин назвал день («вчера», «в субботу» — посчитай дату сам); иначе пусто",
+     "type": "string"
+    },
+    "query": {
+     "description": "о чём искать — ключевые слова: «пицца рецепт», «машина ремонт»; если нужен просто весь день — «весь день»",
+     "type": "string"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "smart_home": {
+  "description": "Яндекс Умный дом: включить/выключить, яркость, цвет, температура белого, режимы (пылесос, кондиционер), пауза, температура кондиционера; или запустить сценарий. Указывай только то, что просили.",
+  "name": "smart_home",
+  "parameters": {
+   "additionalProperties": false,
+   "properties": {
+    "brightness": {
+     "description": "яркость 1–100",
+     "type": "integer"
+    },
+    "color": {
+     "description": "цвет #RRGGBB (красный #FF0000 и т. п.)",
+     "type": "string"
+    },
+    "device_ids": {
+     "description": "id устройств или групп",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "modes": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "description": "режимы {instance: value}, например {\"cleanup_mode\": \"wet_cleaning\", \"work_speed\": \"turbo\"} или {\"thermostat\": \"cool\"}",
+     "type": "object"
+    },
+    "on": {
+     "description": "true — включить (пылесос: начать уборку), false — выключить (пылесос: на базу)",
+     "type": "boolean"
+    },
+    "ranges": {
+     "additionalProperties": {
+      "type": "number"
+     },
+     "description": "числовые параметры {instance: value}, например {\"temperature\": 22}",
+     "type": "object"
+    },
+    "scenario_id": {
+     "description": "id сценария, если просили его запустить (тогда остальное не нужно)",
+     "type": "string"
+    },
+    "temperature_k": {
+     "description": "температура белого света в кельвинах: тёплый 2700, нейтральный 4500, холодный 6500",
+     "type": "integer"
+    },
+    "toggles": {
+     "additionalProperties": {
+      "type": "boolean"
+     },
+     "description": "переключатели {instance: true/false}, например {\"pause\": true}",
+     "type": "object"
+    }
+   },
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "smart_life": {
+  "description": "Устройства Smart Life (Tuya): узнать состояние или изменить функции — включить/выключить (switch_led, switch_1…), яркость, цвет, режим, температуру.",
+  "name": "smart_life",
+  "parameters": {
+   "properties": {
+    "action": {
+     "enum": [
+      "get",
+      "set"
+     ],
+     "type": "string"
+    },
+    "commands": {
+     "description": "для set: {код функции: значение}, например {\"switch_led\": true, \"bright_value_v2\": 500}",
+     "type": "object"
+    },
+    "id": {
+     "description": "id устройства из списка",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "action"
+   ],
+   "type": "object"
+  },
+  "type": "function"
+ },
+ "xiaomi_home": {
+  "description": "Устройства Xiaomi Home (Mi Home): узнать состояние, изменить свойство (включить, яркость, режим, температура…) или выполнить действие (пылесос: start-sweep, stop-sweeping, start-charge…). Пылесос убирает любую комнату дома, в какой бы комнате Mi Home он ни числился: «убери в спальне» — прочитай vacuum.room-information (get), найди id комнаты (имена бывают по-английски: Bedroom — спальня, Kitchen — кухня, Living room — гостиная, Corridor — коридор, Bathroom — ванная) и вызови действие vacuum.start-vacuum-room-sweep (у других моделей — похожее действие уборки комнат из списка действий) с params [\"id\"]. Не говори, что пылесос «в другой комнате» и туда не доедет.",
+  "name": "xiaomi_home",
+  "parameters": {
+   "properties": {
+    "action": {
+     "description": "get — прочитать свойства, set — изменить свойство, do — выполнить действие",
+     "enum": [
+      "get",
+      "set",
+      "do"
+     ],
+     "type": "string"
+    },
+    "did": {
+     "description": "did устройства из списка",
+     "type": "string"
+    },
+    "name": {
+     "description": "свойство («light.on», «light.brightness») или действие («vacuum.start-sweep»); для get можно не указывать — прочитаются все",
+     "type": "string"
+    },
+    "params": {
+     "description": "входные параметры действия, если нужны",
+     "items": {},
+     "type": "array"
+    },
+    "value": {
+     "description": "новое значение для set: true/false, число или код из списка"
+    }
+   },
+   "required": [
+    "did",
+    "action"
+   ],
+   "type": "object"
+  },
+  "type": "function"
+ }
+}

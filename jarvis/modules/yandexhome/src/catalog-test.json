@@ -1,0 +1,16 @@
+{
+  "status":"ok",
+  "rooms":[{"id":"r1","name":"Зал"},{"id":"r2","name":"Кухня"},{"id":"r3","name":"Спальня"}],
+  "devices":[
+    {"id":"spk","name":"Станция","type":"devices.types.smart_speaker.yandex.station.micro","room":"r1","capabilities":[]},
+    {"id":"l1","name":"Свет","type":"devices.types.light","room":"r1","capabilities":[{"type":"devices.capabilities.on_off"}]},
+    {"id":"l2","name":"Лента стол","type":"devices.types.light","room":"r1","capabilities":[{"type":"devices.capabilities.on_off"}]},
+    {"id":"l3","name":"Люстра","type":"devices.types.light","room":"r2","capabilities":[{"type":"devices.capabilities.on_off"}]},
+    {"id":"l4","name":"Лента","aliases":["подсветка кровати"],"type":"devices.types.light","room":"r3","capabilities":[{"type":"devices.capabilities.on_off"},{"type":"devices.capabilities.color_setting","parameters":{"color_model":"rgb","temperature_k":{"min":2700,"max":6500}}}]},
+    {"id":"s1","name":"Розетка","type":"devices.types.socket","room":"r2","capabilities":[{"type":"devices.capabilities.on_off"}]},
+    {"id":"v1","name":"Mijia Robot Vacuum 5","type":"devices.types.vacuum_cleaner","room":"r2","capabilities":[{"type":"devices.capabilities.on_off"}]},
+    {"id":"ac","name":"Кондиционер","type":"devices.types.thermostat.ac","room":"r1","capabilities":[{"type":"devices.capabilities.on_off"},{"type":"devices.capabilities.mode","parameters":{"instance":"thermostat","modes":[{"value":"cool"},{"value":"heat"}]}},{"type":"devices.capabilities.range","parameters":{"instance":"temperature","range":{"min":16,"max":30}}},{"type":"devices.capabilities.toggle","parameters":{"instance":"oscillation"}}]}
+  ],
+  "groups":[{"id":"g1","name":"Вечерние лампы","devices":["l1","l2"]}],
+  "scenarios":[{"id":"sc1","name":"Я дома","is_active":true,"triggers":[{"trigger":{"type":"scenario.trigger.voice","value":"Я вернулся"}}]},{"id":"disabled","name":"Не запускать","is_active":false}]
+}

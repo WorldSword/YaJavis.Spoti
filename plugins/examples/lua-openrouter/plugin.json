@@ -1,0 +1,29 @@
+{
+  "id": "lua-openrouter",
+  "name": "OpenRouter (Lua)",
+  "version": "1.0.0",
+  "description": "Пример подключения сторонних текстовых моделей через OpenRouter с поддержкой инструментов и выбором модели в профиле ассистента",
+  "kind": "lua",
+  "main": "main.lua",
+  "api": 1,
+  "category": "assistant",
+  "provides": ["llm"],
+  "min_core": "0.10.5",
+  "permissions": ["network"],
+  "network_allow": ["openrouter.ai"],
+  "settings": [
+    {
+      "key": "api_key",
+      "label": "API-ключ OpenRouter",
+      "type": "password",
+      "required": true
+    },
+    {
+      "key": "model",
+      "label": "Модель по умолчанию",
+      "type": "text",
+      "default": "deepseek/deepseek-chat-v3-0324",
+      "hint": "Если в профиле ассистента модель не указана, используется эта"
+    }
+  ]
+}

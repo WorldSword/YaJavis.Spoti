@@ -1,0 +1,19 @@
+[package]
+name = "jarvis-setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jarvis-station = { path = "../station-runtime" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+bcrypt = { version = "0.17", default-features = false, features = ["std"] }
+getrandom = "0.3"
+hex = "0.4"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+if-addrs = "0.15"

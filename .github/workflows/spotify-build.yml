@@ -1,0 +1,76 @@
+name: Spotify build
+# Сборка ядра с поддержкой Spotify и пакета plugin-spotify для колонки (arm64 и armv7).
+# Запускается вручную или пушем в ветку spotify-build/**; ничего никуда не отправляет, кроме ветки spotify-assets этого же репозитория.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['spotify-build/**']
+permissions:
+  contents: write
+env:
+  CORE_VERSION: 0.10.19
+  ASSETS_BRANCH: spotify-assets
+jobs:
+  station:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, armv7]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: rustup update stable
+      - run: rustup target add aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf
+      - if: ${{ matrix.arch == 'armv7' }}
+        run: sudo apt-get install -y libclang-dev
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Core and panel
+        run: sh build.sh
+        env:
+          VERSION: ${{ env.CORE_VERSION }}
+          REPO: ${{ github.repository }}
+          STATION_ARCHES: ${{ matrix.arch }}
+          STATION_CORE_ONLY: '1'
+          JARVIS_CATALOG_REF: ${{ github.ref_name }}
+          JARVIS_PLUGIN_ASSETS: https://raw.githubusercontent.com/${{ github.repository }}/${{ env.ASSETS_BRANCH }}
+      - name: Spotify plugin
+        run: sh build.sh
+        env:
+          VERSION: ${{ env.CORE_VERSION }}
+          REPO: ${{ github.repository }}
+          STATION_ARCHES: ${{ matrix.arch }}
+          STATION_PLUGIN_IDS: spotify
+          JARVIS_CATALOG_REF: ${{ github.ref_name }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: station-${{ matrix.arch }}
+          path: build/release/
+          if-no-files-found: error
+  assets:
+    needs: station
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: station-*
+          path: artifacts
+      - name: Publish plugin packages to the assets branch
+        run: |
+          set -eu
+          mkdir assets
+          cp artifacts/*/plugin-spotify-*.zip assets/
+          (cd assets && sha256sum plugin-spotify-*.zip > SHA256SUMS && cat SHA256SUMS)
+          cd assets
+          git init -q -b "$ASSETS_BRANCH"
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add .
+          git commit -q -m "Spotify plugin packages from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$ASSETS_BRANCH"

@@ -1,0 +1,21 @@
+{
+  "id": "weather",
+  "name": "Погода",
+  "version": "1.1.0",
+  "description": "Погода сейчас и на три дня по Open-Meteo, без ключей. «Джарвис, какая погода?», «погода завтра», «нужен ли зонт».",
+  "author": "YaJarvis",
+  "homepage": "https://github.com/newfpv/YaJarvis/tree/main/plugins/weather",
+  "kind": "lua",
+  "main": "main.lua",
+  "permissions": ["tools", "commands", "network", "storage"],
+  "network_allow": ["geocoding-api.open-meteo.com", "api.open-meteo.com"],
+  "api": 1,
+  "category": "info",
+  "icon": "cloud",
+  "provides": ["tools", "commands"],
+  "settings": [
+    {"key": "city", "label": "Город", "type": "text", "hint": "Пусто — город из настроек ассистента"},
+    {"key": "fast", "label": "Отвечать сразу, без нейросети", "type": "bool", "default": true,
+     "hint": "«Какая погода» и «погода завтра» разбирает сам плагин: быстрее и бесплатно"}
+  ]
+}

@@ -1,0 +1,19 @@
+[package]
+name = "jarvis-chatgpt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+tokio.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "socks", "stream", "http2"] }
+base64 = "0.22"
+webrtc = { version = "0.21", default-features = false, features = ["runtime-tokio", "crypto-ring"] }
+rtc = { version = "0.21", default-features = false, features = ["crypto-ring"] }
+libopus_sys = { version = "0.4", features = ["bundled", "static"] }
+async-trait = "0.1"
+bytes = "1"
+
+[dev-dependencies]
+jarvis-vpn = { path = "../vpn" }

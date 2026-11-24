@@ -1,0 +1,22 @@
+{
+  "id": "yandexhome",
+  "name": "Яндекс Умный дом",
+  "version": "1.1.0",
+  "description": "Управление устройствами, группами и сценариями Яндекс Умного дома.",
+  "kind": "lua",
+  "main": "main.lua",
+  "api": 1,
+  "category": "home",
+  "icon": "home",
+  "provides": [
+    "yandexhome"
+  ],
+  "permissions": [
+    "network"
+  ],
+  "network_allow": [
+    "api.iot.yandex.net"
+  ],
+  "author": "YaJarvis",
+  "min_core": "0.10.0"
+}

@@ -1,0 +1,46 @@
+[package]
+name = "jarvis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Джарвис: голосовой ассистент целиком на Яндекс Станции"
+build = "build.rs"
+
+[features]
+default = ["lua"]
+lua = ["dep:mlua"]
+native-plugins = ["dep:jarvis-native-plugins"]
+
+[[bin]]
+name = "jarvis"
+path = "src/main.rs"
+
+[dependencies]
+jarvis-plugin-sdk = { path = "../plugin-sdk", features = ["process"] }
+jarvis-chatgpt = { path = "../modules/chatgpt" }
+jarvis-cloud = { path = "../modules/cloud", features = ["openai", "gemini", "grok", "elevenlabs"] }
+jarvis-native-plugins = { path = "../native-plugins", optional = true }
+jarvis-station = { path = "../station-runtime" }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+mlua = { version = "0.11.4", optional = true, features = ["lua54", "vendored", "serialize", "send"] }
+jarvis-dsp = { path = "../dsp" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+log.workspace = true
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+bcrypt = { version = "0.17", default-features = false, features = ["std"] }
+hmac = "0.12"
+sha2 = { version = "0.10", default-features = false }
+hex = "0.4"
+getrandom = "0.3"
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+libc = "0.2"
+base64 = "0.22"
+regex-lite = "0.1"
+zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "socks", "stream", "http2"] }
+
+[build-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

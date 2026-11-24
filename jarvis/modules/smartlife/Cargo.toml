@@ -1,0 +1,20 @@
+[package]
+name = "jarvis-smartlife"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jarvis-home-common = { path = "../home-common", features = ["qr"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+aes = "0.8"
+ring = "0.17"
+md-5 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+crc32fast = "1"
+zeroize = "1"

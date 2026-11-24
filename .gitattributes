@@ -1,0 +1,9 @@
+* text=auto
+*.sh text eol=lf
+S98jarvisd text eol=lf
+*.rs text eol=lf
+*.py text eol=lf
+*.bin binary
+*.woff2 binary
+jarvis/vendor/** linguist-vendored
+jarvis/modules/youtube/src/ejs.js linguist-generated

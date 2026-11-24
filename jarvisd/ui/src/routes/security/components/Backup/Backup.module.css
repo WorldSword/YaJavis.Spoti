@@ -1,0 +1,33 @@
+.backup {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.actions {
+  gap: 10px;
+}
+
+.file {
+  position: relative;
+}
+
+.file input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.file:has(input:focus-visible) {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.file:has(input:disabled) {
+  opacity: .5;
+  cursor: default;
+}

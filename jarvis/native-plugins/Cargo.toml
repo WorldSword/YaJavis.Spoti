@@ -1,0 +1,11 @@
+[package]
+name = "jarvis-native-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jarvis-plugin-sdk = { path = "../plugin-sdk" }
+
+[features]
+example = []

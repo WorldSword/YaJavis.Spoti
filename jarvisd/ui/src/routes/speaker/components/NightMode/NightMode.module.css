@@ -1,0 +1,41 @@
+.times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.time {
+  width: 128px;
+  max-width: 100%;
+}
+
+.sliders {
+  display: grid;
+  gap: 16px;
+}
+
+.label {
+  color: var(--ink2);
+  font-weight: 600;
+}
+
+.value {
+  color: var(--acc-ink);
+  font: 700 13px var(--sans);
+}
+
+.moon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+}
+
+.moon :global(.ic) {
+  width: 16px;
+  height: 16px;
+}

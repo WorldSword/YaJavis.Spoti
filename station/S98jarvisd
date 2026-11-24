@@ -1,0 +1,7 @@
+#!/bin/sh
+# Джарвис (jarvisd) — всё в /data/opt/jarvisd. Запускается до S99quasar. Удалить этот файл = выключить.
+case "$1" in
+start) [ -x /data/opt/jarvisd/jarvisd.sh ] && /data/opt/jarvisd/jarvisd.sh boot ;;
+stop)  [ -x /data/opt/jarvisd/jarvisd.sh ] && /data/opt/jarvisd/jarvisd.sh stop ;;
+esac
+exit 0

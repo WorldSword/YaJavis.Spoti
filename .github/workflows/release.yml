@@ -1,0 +1,103 @@
+name: Build release
+on:
+  push:
+    tags: ['v[0-9]*']
+permissions:
+  contents: read
+jobs:
+  station:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require release notes
+        run: test -s "docs/releases/${GITHUB_REF_NAME#v}.md"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:panel
+      - run: rustup update stable
+      - run: rustup target add aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf
+      - run: sudo apt-get install -y libclang-dev
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: cargo test --locked --workspace --all-features --exclude jarvis-setup
+        working-directory: jarvis
+      - run: sh build.sh
+        env:
+          VERSION: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          JARVIS_UI: ${{ github.workspace }}/build/ui/panel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: station
+          path: build/release/
+          if-no-files-found: error
+  setup:
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
+            asset: windows-amd64.exe
+            bin: jarvis-setup.exe
+          - runner: ubuntu-latest
+            asset: linux-amd64
+            bin: jarvis-setup
+          - runner: ubuntu-24.04-arm
+            asset: linux-arm64
+            bin: jarvis-setup
+          - runner: macos-15-intel
+            asset: darwin-amd64
+            bin: jarvis-setup
+          - runner: macos-15
+            asset: darwin-arm64
+            bin: jarvis-setup
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:installer
+      - run: rustup update stable
+      - if: matrix.runner == 'ubuntu-latest'
+        run: cargo test --locked -p jarvis-setup
+        working-directory: jarvis
+      - shell: bash
+        run: |
+          export JARVIS_VERSION="${GITHUB_REF_NAME#v}" JARVIS_REPO="$GITHUB_REPOSITORY"
+          cd jarvis
+          cargo build --locked --release -p jarvis-setup
+          mkdir -p ../build/setup
+          cp "target/release/${{ matrix.bin }}" "../build/setup/JarvisSetup-${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-${{ matrix.asset }}
+          path: build/setup/
+          if-no-files-found: error
+  publish:
+    needs: [station, setup]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/release
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd build/release && sha256sum JarvisSetup-* >> SHA256SUMS)
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" build/release/* --verify-tag --title "YaJarvis $GITHUB_REF_NAME" --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
+          fi
+          sh scripts/counter-assets.sh "${GITHUB_REF_NAME#v}"
+          gh workflow run stats.yml --ref main || true

@@ -1,0 +1,13 @@
+.services {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fg3);
+  font-size: 12px;
+  line-height: 16px;
+}

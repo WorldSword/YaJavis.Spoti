@@ -1,0 +1,26 @@
+[package]
+name = "jarvis-youtube"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jarvis-home-common = { path = "../home-common" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "socks", "rustls-tls-webpki-roots"] }
+regex-lite = "0.1"
+rquickjs = { version = "0.12", features = ["parallel"] }
+libopus_sys = { version = "0.4", features = ["bundled", "static"] }
+ring = "0.17"
+hex = "0.4"
+base64 = "0.22"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+
+[target.'cfg(all(target_arch = "arm", target_env = "musl"))'.dependencies]
+rquickjs = { version = "0.12", features = ["bindgen"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

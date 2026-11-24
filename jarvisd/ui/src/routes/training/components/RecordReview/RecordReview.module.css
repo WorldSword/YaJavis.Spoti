@@ -1,0 +1,120 @@
+.player {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+
+.head .guess {
+  white-space: normal;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.wave {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 56px;
+}
+
+.wave i {
+  flex: 1;
+  min-width: 0;
+  height: var(--height);
+  min-height: 3px;
+  border-radius: 2px;
+  background: var(--raise2);
+  transition: background-color .12s linear, height .3s var(--ease);
+}
+
+.wave i:global(.filled) {
+  background: var(--acc);
+}
+
+.wave input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wave:focus-within {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.time {
+  min-width: 72px;
+  color: var(--fg2);
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.question {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.answers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.answers button {
+  height: 44px;
+  font-size: 15px;
+}
+
+.answers kbd {
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font: 11px var(--mono);
+  color: inherit;
+  opacity: .55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+@media (max-width: 560px) {
+  .answers {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+
+  .time {
+    grid-column: 2;
+  }
+}

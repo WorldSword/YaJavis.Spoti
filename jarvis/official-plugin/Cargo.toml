@@ -1,0 +1,50 @@
+[package]
+name = "jarvis-official-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+chatgpt = ["dep:jarvis-chatgpt"]
+openai = ["cloud", "jarvis-cloud/openai"]
+gemini = ["cloud", "jarvis-cloud/gemini"]
+grok = ["cloud", "jarvis-cloud/grok"]
+elevenlabs = ["cloud", "jarvis-cloud/elevenlabs"]
+cloud = ["dep:jarvis-cloud", "dep:futures-util"]
+vpn = ["dep:jarvis-vpn"]
+youtube = ["dep:jarvis-youtube", "dep:jarvis-home-common"]
+spotify = ["dep:jarvis-spotify"]
+homeassistant = ["dep:jarvis-homeassistant"]
+yandexhome = ["dep:jarvis-yandexhome"]
+smartlife = ["dep:jarvis-smartlife", "dep:jarvis-home-common"]
+xiaomi = ["dep:jarvis-xiaomi", "dep:jarvis-home-common"]
+training = ["dep:jarvis-wake-train", "dep:flate2", "dep:zip", "dep:base64", "dep:getrandom", "dep:libc", "dep:reqwest", "dep:jiff"]
+
+[dependencies]
+jarvis-plugin-sdk = { path = "../plugin-sdk", features = ["process"] }
+jarvis-chatgpt = { path = "../modules/chatgpt", optional = true }
+jarvis-cloud = { path = "../modules/cloud", optional = true }
+jarvis-vpn = { path = "../modules/vpn", optional = true }
+jarvis-youtube = { path = "../modules/youtube", optional = true }
+jarvis-spotify = { path = "../modules/spotify", optional = true }
+jarvis-homeassistant = { path = "../modules/homeassistant", optional = true }
+jarvis-yandexhome = { path = "../modules/yandexhome", optional = true }
+jarvis-smartlife = { path = "../modules/smartlife", optional = true }
+jarvis-xiaomi = { path = "../modules/xiaomi", optional = true }
+jarvis-home-common = { path = "../modules/home-common", optional = true }
+jarvis-wake-train = { path = "../modules/wake-train", optional = true }
+futures-util = { version = "0.3", optional = true, default-features = false, features = ["sink", "std"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+flate2 = { version = "1", optional = true, default-features = false, features = ["rust_backend"] }
+zip = { version = "2", optional = true, default-features = false, features = ["deflate-flate2", "flate2"] }
+base64 = { version = "0.22", optional = true }
+getrandom = { version = "0.3", optional = true }
+libc = { version = "0.2", optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls-webpki-roots", "json", "stream"] }
+jiff = { version = "0.2", optional = true, default-features = false, features = ["std"] }
+
+[dev-dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }

@@ -1,0 +1,381 @@
+.updates {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+
+.statusCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgb(0 0 0 / .22);
+  border: 1px solid var(--soft-line);
+}
+
+.versionInfo {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.version {
+  font: 700 18px/22px var(--mono);
+  color: var(--fg);
+  letter-spacing: -.01em;
+}
+
+.checked {
+  font-size: 12.5px;
+  color: var(--fg3);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.pillAccent {
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+}
+
+.pillOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pillBusy {
+  background: var(--raise);
+  color: var(--fg2);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbar :global(.ic) {
+  width: 15px;
+  height: 15px;
+}
+
+.file {
+  position: relative;
+}
+
+.file input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.file:has(input:focus-visible) {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.file:has(input:disabled) {
+  opacity: .5;
+  cursor: default;
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: var(--bad-soft);
+  border: 1px solid color-mix(in srgb, var(--bad) 32%, transparent);
+  color: var(--bad);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.releaseCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 11%, rgb(0 0 0 / .24)), rgb(0 0 0 / .24));
+  border: 1px solid color-mix(in srgb, var(--acc) 32%, var(--line));
+}
+
+.releaseHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.releaseTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.releaseIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+}
+
+.releaseIcon :global(.ic) {
+  width: 18px;
+  height: 18px;
+}
+
+.releaseCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.releaseCopy b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.releaseCopy small {
+  font-size: 12.5px;
+  color: var(--fg2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.releaseLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--acc-ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.releaseLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.releaseLink :global(.ic) {
+  width: 12px;
+  height: 12px;
+}
+
+.changelog {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--acc) 18%, var(--soft-line));
+}
+
+.changelogLabel {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.notes {
+  max-height: 280px;
+  overflow: auto;
+  scrollbar-width: thin;
+  color: var(--ink2);
+  font: 400 13.5px/1.6 var(--sans);
+  overflow-wrap: anywhere;
+}
+
+.notes :global(h3),
+.notes :global(h4),
+.notes :global(h5) {
+  margin: 12px 0 6px;
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.notes :global(h3) {
+  font-size: 14.5px;
+}
+
+.notes :global(h4),
+.notes :global(h5) {
+  font-size: 13.5px;
+}
+
+.notes :global(*:first-child) {
+  margin-top: 0;
+}
+
+.notes :global(*:last-child) {
+  margin-bottom: 0;
+}
+
+.notes :global(p) {
+  margin: 6px 0;
+}
+
+.notes :global(ul),
+.notes :global(ol) {
+  margin: 6px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+}
+
+.notes :global(li ul),
+.notes :global(li ol) {
+  margin-top: 5px;
+}
+
+.notes :global(strong) {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.notes :global(a) {
+  color: var(--acc-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.notes :global(a:hover) {
+  color: var(--acc);
+}
+
+.notes :global(code) {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--raise);
+  color: var(--fg);
+  font: 12px/1.4 var(--mono);
+}
+
+.notes :global(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg0);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.notes :global(pre code) {
+  padding: 0;
+  background: none;
+  color: var(--ink2);
+  font: 12px/1.5 var(--mono);
+}
+
+.notes :global(blockquote) {
+  margin: 8px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--acc);
+  color: var(--fg3);
+}
+
+.notes :global(hr) {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.currentNotes {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgb(0 0 0 / .18);
+  border: 1px solid var(--soft-line);
+}
+
+.prefs {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgb(0 0 0 / .2);
+  border: 1px solid var(--soft-line);
+}
+
+.prefRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+
+.prefCopy {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.prefCopy b {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.prefCopy small {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg2);
+}
+
+.prefDivider {
+  height: 1px;
+  background: var(--soft-line);
+}
+
+.prefSwitch {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .releaseHead > :global(.btn) {
+    width: 100%;
+  }
+}

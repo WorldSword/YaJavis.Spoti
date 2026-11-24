@@ -1,0 +1,16 @@
+{
+  "id": "xiaomi",
+  "name": "Xiaomi Home",
+  "version": "1.0.0",
+  "description": "Устройства Xiaomi Home, свойства и действия MIoT.",
+  "kind": "rust",
+  "main": "plugin",
+  "api": 1,
+  "category": "home",
+  "icon": "home",
+  "provides": [
+    "xiaomi"
+  ],
+  "author": "YaJarvis",
+  "min_core": "0.10.0"
+}

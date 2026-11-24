@@ -1,0 +1,313 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding: 28px;
+  overflow: hidden;
+  isolation: isolate;
+  container-type: inline-size;
+}
+
+.glow {
+  position: absolute;
+  z-index: -1;
+  top: -30%;
+  left: -10%;
+  width: 70%;
+  height: 160%;
+  object-fit: cover;
+  filter: blur(80px) saturate(1.6);
+  opacity: .28;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+
+.glow:not([src]) {
+  opacity: 0;
+}
+
+.top {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+}
+
+.cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 22px;
+  background: linear-gradient(135deg, var(--raise2), var(--bg0));
+  box-shadow: 0 24px 50px -22px rgb(0 0 0 / .8);
+}
+
+.cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .6s ease, filter .5s ease;
+}
+
+.cover img:global(.ok) {
+  opacity: 1;
+}
+
+.card[data-state="paused"] .cover img {
+  filter: saturate(.5) brightness(.75);
+}
+
+.cover :global(.ic) {
+  width: 56px;
+  height: 56px;
+  color: var(--fg3);
+  stroke-width: 1.2;
+}
+
+.meta {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.kicker :global(.np-eq) {
+  height: 12px;
+}
+
+.title,
+.artist {
+  overflow: hidden;
+  white-space: nowrap;
+  animation: appear .45s var(--ease);
+}
+
+.title {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding-bottom: .1em;
+  font-size: clamp(26px, 3vw, 46px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -.03em;
+}
+
+.titleText {
+  display: inline-block;
+  width: max-content;
+}
+
+.scroll {
+  mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+}
+
+.scroll .titleText {
+  translate: 14px 0;
+  animation: scroll var(--duration) ease-in-out infinite alternate;
+}
+
+.artist {
+  color: var(--ink2);
+  font-size: 18px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+@keyframes appear {
+  from {
+    transform: translateY(8px);
+    filter: blur(4px);
+    opacity: 0;
+  }
+}
+
+@keyframes scroll {
+  0%, 18% {
+    transform: translateX(0);
+  }
+
+  82%, 100% {
+    transform: translateX(var(--distance));
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips :global(.chip) {
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+.bottom {
+  display: grid;
+  gap: 12px;
+}
+
+.seek {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "actions controls volume";
+  align-items: center;
+  gap: 16px;
+}
+
+.actions {
+  grid-area: actions;
+  display: flex;
+  gap: 2px;
+  margin-left: -8px;
+}
+
+.actions :global(.cbtn) {
+  width: 42px;
+  height: 42px;
+}
+
+.actions :global(.cbtn .ic) {
+  width: 19px;
+  height: 19px;
+}
+
+.controls {
+  grid-area: controls;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+
+.controls :global(.cbtn) {
+  width: 54px;
+  height: 54px;
+}
+
+.controls :global(.cbtn .ic) {
+  width: 22px;
+  height: 22px;
+}
+
+.controls :global(.cbtn.big) {
+  width: 76px;
+  height: 76px;
+}
+
+.controls :global(.cbtn.big .ic) {
+  width: 30px;
+  height: 30px;
+}
+
+.volume {
+  grid-area: volume;
+  justify-self: end;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 150px) 2ch;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 230px);
+  color: var(--fg2);
+}
+
+.volume :global(.ic) {
+  width: 20px;
+  height: 20px;
+}
+
+.volume :global(.vol-big) {
+  color: var(--fg);
+  font-size: 17px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.card:is([data-state="idle"], [data-state="loading"]) :is(.seek, .actions),
+.card:is([data-state="idle"], [data-state="loading"]) .controls :global(.cbtn:not(.big)) {
+  visibility: hidden;
+}
+
+@media (max-width: 700px) {
+  .card {
+    padding: 18px;
+  }
+
+  .top {
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+@container (max-width: 720px) {
+  .bar {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "controls controls" "actions volume";
+    row-gap: 12px;
+  }
+
+  .volume {
+    grid-template-columns: 20px minmax(0, 1fr) 2ch;
+    width: min(100%, 240px);
+  }
+}
+
+@container (max-width: 360px) {
+  .controls {
+    gap: 8px;
+  }
+
+  .controls :global(.cbtn) {
+    width: 40px;
+    height: 40px;
+  }
+
+  .controls :global(.cbtn.big) {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .artist,
+  .scroll .titleText {
+    animation: none;
+  }
+
+  .scroll {
+    mask-image: none;
+    text-overflow: ellipsis;
+  }
+
+  .titleText {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    translate: none;
+  }
+}

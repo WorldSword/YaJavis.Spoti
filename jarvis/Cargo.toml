@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = ["core", "dsp", "station-runtime", "setup", "plugin-sdk", "native-plugins", "official-plugin", "modules/homeassistant", "modules/yandexhome", "modules/vpn", "modules/cloud", "modules/chatgpt", "modules/home-common", "modules/smartlife", "modules/xiaomi", "modules/youtube", "modules/spotify", "modules/wake-train"]
+default-members = ["core", "dsp"]
+exclude = ["vendor/reality-tls"]
+
+[workspace.package]
+version = "0.10.19"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync", "macros", "io-util", "fs", "process", "signal"] }
+log = "0.4"
+
+# Колонка: 87 МБ флешки и 238 МБ памяти на всё. Собираем как можно компактнее.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+debug = false
+incremental = false
+panic = "abort"
+
+# Звук и нейросети слова считаются 100 раз в секунду: тут скорость важнее размера (векторизация NEON).
+[profile.release.package.jarvis-dsp]
+opt-level = 3
+
+# QuickJS parses long player scripts on the speaker.
+[profile.release.package.rquickjs-sys]
+opt-level = 3

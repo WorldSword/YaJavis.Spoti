@@ -1,0 +1,16 @@
+{
+  "id": "spotify",
+  "name": "Spotify",
+  "version": "1.0.0",
+  "description": "Spotify через Soloist: голосом и из панели, очередь, любимые треки, диджей, радио по треку, громкость и пауза на время речи Джарвиса.",
+  "kind": "rust",
+  "main": "plugin",
+  "api": 1,
+  "category": "media",
+  "icon": "music",
+  "provides": [
+    "spotify"
+  ],
+  "author": "YaJarvis",
+  "min_core": "0.10.0"
+}

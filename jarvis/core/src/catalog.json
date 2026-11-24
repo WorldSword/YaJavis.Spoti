@@ -1,0 +1,466 @@
+{
+ "backend_models": [
+  "gpt-6-luna",
+  "gpt-6.2-sol",
+  "gpt-6.2-astra",
+  "gpt-6.1-terra",
+  "gpt-6.1-sol",
+  "gpt-6-sol",
+  "gpt-6-astra",
+  "gpt-5.6-luna"
+ ],
+ "chatgpt_voice_groups": [
+  {
+   "name": "GPT-Live Codex V1",
+   "voices": [
+    {
+     "ID": "cove",
+     "Note": "спокойный"
+    },
+    {
+     "ID": "juniper",
+     "Note": "светлый"
+    },
+    {
+     "ID": "maple",
+     "Note": "тёплый"
+    },
+    {
+     "ID": "spruce",
+     "Note": "деловой"
+    },
+    {
+     "ID": "ember",
+     "Note": "живой"
+    },
+    {
+     "ID": "vale",
+     "Note": "мягкий"
+    },
+    {
+     "ID": "breeze",
+     "Note": "лёгкий"
+    },
+    {
+     "ID": "arbor",
+     "Note": "низкий"
+    },
+    {
+     "ID": "sol",
+     "Note": "яркий"
+    }
+   ]
+  },
+  {
+   "name": "GPT-Live Codex V3",
+   "voices": [
+    {"ID":"aube","Note":"французский"},
+    {"ID":"rivage","Note":"французский"},
+    {"ID":"bubbie","Note":"английский"},
+    {"ID":"haetsal","Note":"корейский"},
+    {"ID":"hanul","Note":"корейский"},
+    {"ID":"himari","Note":"японский"},
+    {"ID":"rindo","Note":"японский"},
+    {"ID":"leher","Note":"хинди"},
+    {"ID":"neer","Note":"хинди"},
+    {"ID":"miko","Note":"немецкий"},
+    {"ID":"sonna","Note":"немецкий"},
+    {"ID":"rio","Note":"португальский, Бразилия"},
+    {"ID":"viola","Note":"португальский, Бразилия"},
+    {"ID":"tinta","Note":"испанский, Мексика"}
+   ]
+  }
+ ],
+ "efforts": [
+  "none",
+  "low",
+  "medium",
+  "high"
+ ],
+ "gemini_model_info": [
+  {
+   "id": "gemini-3.8-live",
+   "name": "Gemini 3.8 Live",
+   "note": "быстрая и умная · бесплатно в пределах лимита"
+  },
+  {
+   "id": "gemini-3.8-live-extended-thinking",
+   "name": "Gemini 3.8 Live, думает дольше",
+   "note": "для сложных вопросов, отвечает медленнее · бесплатно в пределах лимита"
+  },
+  {
+   "id": "gemini-3.1-flash-live-preview",
+   "name": "Gemini 3.1 Flash Live",
+   "note": "попроще, свой отдельный бесплатный лимит"
+  },
+  {
+   "id": "gemini-2.5-flash-native-audio-preview-12-2025",
+   "name": "Gemini 2.5 Flash",
+   "note": "старая, свой отдельный бесплатный лимит"
+  }
+ ],
+ "gemini_models": [
+  "gemini-3.8-live",
+  "gemini-3.8-live-extended-thinking",
+  "gemini-3.1-flash-live-preview",
+  "gemini-2.5-flash-native-audio-preview-12-2025"
+ ],
+ "gemini_voice_groups": [
+  {
+   "name": "Gemini",
+   "voices": [
+    {
+     "ID": "Charon",
+     "Note": "деловой"
+    },
+    {
+     "ID": "Kore",
+     "Note": "твёрдый"
+    },
+    {
+     "ID": "Puck",
+     "Note": "бодрый"
+    },
+    {
+     "ID": "Zephyr",
+     "Note": "яркий"
+    },
+    {
+     "ID": "Fenrir",
+     "Note": "энергичный"
+    },
+    {
+     "ID": "Leda",
+     "Note": "юный"
+    },
+    {
+     "ID": "Orus",
+     "Note": "твёрдый"
+    },
+    {
+     "ID": "Aoede",
+     "Note": "лёгкий"
+    },
+    {
+     "ID": "Callirrhoe",
+     "Note": "спокойный"
+    },
+    {
+     "ID": "Autonoe",
+     "Note": "яркий"
+    },
+    {
+     "ID": "Enceladus",
+     "Note": "с придыханием"
+    },
+    {
+     "ID": "Iapetus",
+     "Note": "чёткий"
+    },
+    {
+     "ID": "Umbriel",
+     "Note": "спокойный"
+    },
+    {
+     "ID": "Algieba",
+     "Note": "мягкий"
+    },
+    {
+     "ID": "Despina",
+     "Note": "мягкий"
+    },
+    {
+     "ID": "Erinome",
+     "Note": "чёткий"
+    },
+    {
+     "ID": "Algenib",
+     "Note": "хрипловатый"
+    },
+    {
+     "ID": "Rasalgethi",
+     "Note": "деловой"
+    },
+    {
+     "ID": "Laomedeia",
+     "Note": "бодрый"
+    },
+    {
+     "ID": "Achernar",
+     "Note": "тихий"
+    },
+    {
+     "ID": "Alnilam",
+     "Note": "твёрдый"
+    },
+    {
+     "ID": "Schedar",
+     "Note": "ровный"
+    },
+    {
+     "ID": "Gacrux",
+     "Note": "зрелый"
+    },
+    {
+     "ID": "Pulcherrima",
+     "Note": "напористый"
+    },
+    {
+     "ID": "Achird",
+     "Note": "дружелюбный"
+    },
+    {
+     "ID": "Zubenelgenubi",
+     "Note": "непринуждённый"
+    },
+    {
+     "ID": "Vindemiatrix",
+     "Note": "нежный"
+    },
+    {
+     "ID": "Sadachbia",
+     "Note": "живой"
+    },
+    {
+     "ID": "Sadaltager",
+     "Note": "знающий"
+    },
+    {
+     "ID": "Sulafat",
+     "Note": "тёплый"
+    }
+   ]
+  }
+ ],
+ "grok_voice_groups": [
+  {
+   "name": "Grok",
+   "voices": [
+    {
+     "ID": "ara",
+     "Note": "тёплый женский"
+    },
+    {
+     "ID": "eve",
+     "Note": "бодрый женский"
+    },
+    {
+     "ID": "leo",
+     "Note": "уверенный мужской"
+    },
+    {
+     "ID": "rex",
+     "Note": "низкий мужской"
+    },
+    {
+     "ID": "sal",
+     "Note": "спокойный"
+    }
+   ]
+  }
+ ],
+ "model_efforts": {
+  "gpt-6.2-astra": ["low", "medium", "high"],
+  "gpt-6.2-sol": ["low", "medium", "high"],
+  "gpt-5.6-luna": [
+   "none",
+   "low",
+   "medium",
+   "high"
+  ],
+  "gpt-6-astra": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "gpt-6-luna": [
+   "none",
+   "low",
+   "medium",
+   "high"
+  ],
+  "gpt-6-sol": [
+   "none",
+   "low",
+   "medium",
+   "high"
+  ],
+  "gpt-6.1-sol": [
+   "low",
+   "medium",
+   "high"
+  ],
+  "gpt-6.1-terra": [
+   "none",
+   "low",
+   "medium",
+   "high"
+  ]
+ },
+ "voice_groups": [
+  {
+   "name": "Стандартные",
+   "voices": [
+    {
+     "ID": "cedar",
+     "Note": "мужской"
+    },
+    {
+     "ID": "marin",
+     "Note": "женский"
+    },
+    {
+     "ID": "ash",
+     "Note": "мужской"
+    },
+    {
+     "ID": "alloy",
+     "Note": "нейтральный"
+    },
+    {
+     "ID": "ballad",
+     "Note": "мужской"
+    },
+    {
+     "ID": "coral",
+     "Note": "женский"
+    },
+    {
+     "ID": "echo",
+     "Note": "мужской"
+    },
+    {
+     "ID": "sage",
+     "Note": "женский"
+    },
+    {
+     "ID": "shimmer",
+     "Note": "женский"
+    },
+    {
+     "ID": "verse",
+     "Note": "мужской"
+    }
+   ]
+  },
+  {
+   "name": "Английский акцент",
+   "voices": [
+    {
+     "ID": "meridian",
+     "Note": "мужской, Северная Америка"
+    },
+    {
+     "ID": "gleam",
+     "Note": "женский, Северная Америка"
+    },
+    {
+     "ID": "vesper",
+     "Note": "мужской, британский"
+    },
+    {
+     "ID": "stone",
+     "Note": "мужской, ирландский"
+    },
+    {
+     "ID": "willow",
+     "Note": "женский, ирландский"
+    },
+    {
+     "ID": "ripple",
+     "Note": "мужской, австралийский"
+    },
+    {
+     "ID": "quartz",
+     "Note": "женский, австралийский"
+    },
+    {
+     "ID": "cinder",
+     "Note": "мужской, юг США"
+    },
+    {
+     "ID": "delta",
+     "Note": "женский, юг США"
+    },
+    {
+     "ID": "beacon",
+     "Note": "мужской, филиппинский"
+    }
+   ]
+  },
+  {
+   "name": "Немецкий",
+   "voices": [
+    {
+     "ID": "flitz",
+     "Note": "мужской"
+    },
+    {
+     "ID": "nuri",
+     "Note": "женский"
+    },
+    {
+     "ID": "juni",
+     "Note": "женский"
+    }
+   ]
+  },
+  {
+   "name": "Французский",
+   "voices": [
+    {
+     "ID": "sillage",
+     "Note": "мужской"
+    },
+    {
+     "ID": "brise",
+     "Note": "женский"
+    }
+   ]
+  },
+  {
+   "name": "Португальский",
+   "voices": [
+    {
+     "ID": "tempo",
+     "Note": "мужской, бразильский"
+    },
+    {
+     "ID": "bossa",
+     "Note": "женский, бразильский"
+    }
+   ]
+  },
+  {
+   "name": "Японский",
+   "voices": [
+    {
+     "ID": "shida",
+     "Note": "мужской"
+    },
+    {
+     "ID": "harema",
+     "Note": "женский"
+    }
+   ]
+  },
+  {
+   "name": "Корейский",
+   "voices": [
+    {
+     "ID": "noeul",
+     "Note": "женский"
+    }
+   ]
+  },
+  {
+   "name": "Хинди",
+   "voices": [
+    {
+     "ID": "nira",
+     "Note": "женский"
+    }
+   ]
+  }
+ ]
+}

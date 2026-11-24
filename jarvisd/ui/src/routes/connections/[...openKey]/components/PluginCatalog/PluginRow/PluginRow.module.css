@@ -1,0 +1,36 @@
+.row {
+  position: relative;
+}
+
+.title {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.title b {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.title::after {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  content: "";
+}
+
+.title:focus-visible::after {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
+}
+
+.actions,
+.install {
+  position: relative;
+}

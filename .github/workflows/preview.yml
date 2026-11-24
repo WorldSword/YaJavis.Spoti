@@ -1,0 +1,42 @@
+name: Preview installer
+on:
+  push:
+    branches: ['preview-build/**']
+permissions:
+  contents: read
+jobs:
+  station:
+    strategy:
+      matrix:
+        arch: [arm64, armv7]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: ${{ !startsWith(github.ref_name, 'preview-build/voice-') }}
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies for the panel built by build.sh
+        if: ${{ !startsWith(github.ref_name, 'preview-build/voice-') }}
+        run: npm ci
+      - run: rustup update stable
+      - run: rustup target add aarch64-unknown-linux-musl armv7-unknown-linux-musleabihf
+      - if: ${{ matrix.arch == 'armv7' && !startsWith(github.ref_name, 'preview-build/core-') }}
+        run: sudo apt-get install -y libclang-dev
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: sh build.sh
+        env:
+          VERSION: 0.10.0
+          REPO: ${{ github.repository }}
+          STATION_ARCHES: ${{ matrix.arch }}
+          STATION_CORE_ONLY: ${{ startsWith(github.ref_name, 'preview-build/core-') && '1' || '0' }}
+          STATION_PLUGIN_IDS: ${{ startsWith(github.ref_name, 'preview-build/voice-') && 'vpn chatgpt' || '' }}
+          JARVIS_PLUGIN_ASSETS: https://raw.githubusercontent.com/${{ github.repository }}/preview-assets-0.10.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: station-${{ matrix.arch }}
+          path: build/release/
+          if-no-files-found: error

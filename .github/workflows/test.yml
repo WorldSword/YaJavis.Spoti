@@ -1,0 +1,35 @@
+name: Tests
+on:
+  push:
+    branches: [main, rust]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: rustup update stable
+      - run: cargo test --locked --workspace --all-features
+        working-directory: jarvis
+      - run: cargo check --locked -p jarvis --no-default-features
+        working-directory: jarvis
+      - name: Check clean setup and official plugin lifecycle
+        shell: bash
+        run: |
+          export JARVIS_VERSION=0.10.0
+          export JARVIS_PLUGIN_ASSETS=http://127.0.0.1:18079
+          cd jarvis
+          cargo build --locked -p jarvis -p jarvis-official-plugin --all-features
+          cp target/debug/jarvis-official-plugin target/debug/plugin-smoke
+          strip target/debug/plugin-smoke
+          cd ..
+          python3 scripts/test-official-plugins.py jarvis/target/debug/jarvis jarvis/target/debug/plugin-smoke
+      - run: sh scripts/pack-plugins.sh /tmp/jarvis-plugins

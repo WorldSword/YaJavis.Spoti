@@ -1,0 +1,31 @@
+.fields {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.savedPhrase {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file {
+  width: 100%;
+  min-width: 0;
+}
+
+.recorder {
+  display: grid;
+  gap: 12px;
+}
+
+.recorder select {
+  max-width: 100%;
+}
+
+.recorder p {
+  margin: 0;
+}
+
+.recorder audio {
+  width: min(100%, 420px);
+}

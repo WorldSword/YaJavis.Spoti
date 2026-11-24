@@ -1,0 +1,12 @@
+{
+  "id": "lua-coin",
+  "name": "Монетка на Lua",
+  "version": "1.0.0",
+  "description": "Пример лёгкого плагина: монетка без сети и отдельной программы",
+  "kind": "lua",
+  "main": "main.lua",
+  "api": 1,
+  "category": "fun",
+  "permissions": ["tools", "commands"],
+  "settings": [{"key": "heads", "label": "Название орла", "type": "text", "default": "орёл"}]
+}

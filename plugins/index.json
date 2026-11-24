@@ -1,0 +1,113 @@
+{
+  "api": 1,
+  "plugins": [
+    {
+      "id": "weather",
+      "category": "info",
+      "name": "Погода",
+      "kind": "lua",
+      "version": "1.1.0",
+      "icon": "cloud",
+      "recommended": true,
+      "description": "Погода сейчас и на три дня по Open-Meteo, без ключей."
+    },
+    {
+      "id": "currency",
+      "category": "info",
+      "name": "Курсы валют",
+      "kind": "lua",
+      "version": "1.1.0",
+      "icon": "bolt",
+      "description": "Официальные курсы ЦБ РФ или Нацбанка Беларуси и пересчёт сумм."
+    },
+    {
+      "id": "dice",
+      "category": "fun",
+      "name": "Монетка и кубик",
+      "kind": "lua",
+      "version": "1.1.0",
+      "icon": "puzzle",
+      "description": "Подбросить монетку, бросить кубик, случайное число. Пример простого плагина."
+    },
+    {
+      "id": "homeassistant",
+      "kind": "rust",
+      "category": "home",
+      "name": "Home Assistant",
+      "version": "1.0.1",
+      "icon": "home",
+      "description": "Управление устройствами Home Assistant и уборка выбранных комнат.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "yandexhome",
+      "kind": "lua",
+      "category": "home",
+      "name": "Яндекс Умный дом",
+      "version": "1.1.0",
+      "icon": "home",
+      "description": "Управление устройствами, группами и сценариями Яндекс Умного дома.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "smartlife",
+      "kind": "rust",
+      "category": "home",
+      "name": "Smart Life",
+      "version": "1.0.0",
+      "icon": "home",
+      "description": "Устройства и команды Smart Life (Tuya) через облако и домашнюю сеть.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "xiaomi",
+      "kind": "rust",
+      "category": "home",
+      "name": "Xiaomi Home",
+      "version": "1.0.0",
+      "icon": "home",
+      "description": "Устройства Xiaomi Home, свойства и действия MIoT.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "vpn",
+      "kind": "rust",
+      "category": "system",
+      "name": "VPN",
+      "version": "0.3.5",
+      "icon": "shield",
+      "description": "Подключение по ссылке VLESS для выбранных сервисов.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "youtube",
+      "kind": "rust",
+      "category": "media",
+      "name": "YouTube",
+      "version": "1.1.1",
+      "icon": "music",
+      "description": "Поиск и воспроизведение YouTube, очередь, история, лайки, плейлисты и вход в аккаунт.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "spotify",
+      "kind": "rust",
+      "category": "media",
+      "name": "Spotify",
+      "version": "1.0.0",
+      "icon": "music",
+      "description": "Spotify через Soloist: голосом и из панели, очередь, любимые треки, диджей, радио по треку, громкость и пауза на время речи Джарвиса.",
+      "min_core": "0.10.0"
+    },
+    {
+      "id": "training",
+      "kind": "rust",
+      "category": "system",
+      "name": "Обучение слова",
+      "version": "1.2.3",
+      "icon": "mic",
+      "description": "Смена фразы активации, обучение на своих записях и экспорт примеров.",
+      "min_core": "0.10.0"
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px;
+  margin: -2px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--soft-line);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 6px;
+  border-radius: 10px;
+  color: var(--fg3);
+  cursor: text;
+  transition: background .2s;
+}
+
+.field:focus-within {
+  background: rgb(255 255 255 / .03);
+}
+
+.field :global(.ic),
+.form :global(.cbtn .ic) {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.field input,
+.field input:focus {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg);
+  font-size: 13.5px;
+}
+
+.field input::placeholder {
+  color: var(--fg3);
+}
+
+.form :global(.cbtn) {
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  color: var(--fg2);
+  transition: opacity .2s, transform .25s var(--spring), color .2s, background .2s;
+}
+
+.form :global(.cbtn:hover:not(:disabled)) {
+  background: var(--raise);
+  color: var(--fg);
+}
+
+.form :global(.cbtn:first-of-type:hover:not(:disabled)) {
+  color: var(--acc-ink);
+}
+
+.form:has(input:placeholder-shown) :global(.cbtn) {
+  transform: scale(.7);
+  opacity: 0;
+}
+
+.list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 8px;
+  border-radius: 12px;
+  transition: background-color .15s;
+  animation: rise .35s var(--ease) both;
+}
+
+.row:is(:hover, :focus-within) {
+  background: var(--raise);
+}
+
+.row.current {
+  background: var(--acc-soft);
+}
+
+.track {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 0 6px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+button.track:not(:disabled) {
+  cursor: pointer;
+}
+
+.image {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: var(--raise2);
+  object-fit: cover;
+}
+
+.description {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.description > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description span {
+  color: var(--fg2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.remove {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  opacity: 0;
+  transition: opacity .15s;
+}
+
+.row:is(:hover, :focus-within) .remove {
+  opacity: 1;
+}
+
+.equalizer {
+  height: 14px;
+  margin: 0 6px;
+}
+
+@media (hover: none) {
+  .remove {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    animation: none;
+  }
+
+  .row,
+  .remove,
+  .form :global(.cbtn) {
+    transition: none;
+  }
+}

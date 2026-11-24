@@ -1,0 +1,13 @@
+[package]
+name = "jarvis-station"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2 = { version = "0.10", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

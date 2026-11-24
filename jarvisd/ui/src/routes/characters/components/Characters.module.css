@@ -1,0 +1,241 @@
+.characters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: 20px;
+}
+
+.character {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 220px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform .3s var(--spring), border-color .2s;
+}
+
+.character:hover {
+  transform: translateY(-3px);
+}
+
+.character:active {
+  transform: scale(.985);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 40%, transparent), var(--acc-soft));
+  color: var(--acc-ink);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name strong {
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text {
+  display: -webkit-box;
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink2);
+  font-size: 14px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--acc-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  opacity: .7;
+  transition: opacity .2s;
+}
+
+.character:is(:hover, :focus-visible) .edit {
+  opacity: 1;
+}
+
+.add {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  border: 2px dashed rgb(255 255 255 / .1);
+  border-radius: 24px;
+  background: transparent;
+  color: var(--fg2);
+  text-align: center;
+}
+
+.add:hover {
+  border-color: var(--acc);
+  color: var(--fg);
+}
+
+.add :global(.ic) {
+  width: 28px;
+  height: 28px;
+  color: var(--acc);
+}
+
+.add b {
+  color: var(--fg);
+  font-size: 16px;
+}
+
+.add small {
+  max-width: 220px;
+  font-size: 13px;
+}
+
+.dialog {
+  width: min(680px, 100% - 40px);
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--soft-line);
+  border-radius: 26px;
+  background: #1c1c24;
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / .8);
+  color: var(--fg);
+}
+
+:global(.view.enter) > .dialog[open] {
+  animation: editor-in .45s cubic-bezier(.34, 1.4, .64, 1);
+}
+
+.dialog::backdrop {
+  background: rgb(5 5 8 / .6);
+  backdrop-filter: blur(6px);
+}
+
+.editor {
+  display: grid;
+  gap: 16px;
+  padding: 26px;
+}
+
+.editor :global(.card-head) {
+  margin: 0;
+}
+
+.editor textarea {
+  min-height: 220px;
+  line-height: 21px;
+}
+
+.textLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  color: var(--ink2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, transform .2s var(--spring);
+}
+
+.preset:hover {
+  border-color: var(--acc);
+  color: var(--fg);
+}
+
+.preset:active {
+  transform: scale(.94);
+}
+
+@keyframes editor-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .dialog {
+    inset: auto 0 0;
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 16px);
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+  }
+
+  :global(.view.enter) > .dialog[open] {
+    animation: sheet-in .38s var(--ease);
+  }
+
+  .editor {
+    padding: 22px 18px calc(22px + env(safe-area-inset-bottom));
+  }
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.view.enter) > .dialog[open] {
+    animation: none;
+  }
+
+  .character,
+  .preset {
+    transition: none;
+  }
+}
