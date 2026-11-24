@@ -61,12 +61,12 @@ jobs:
         with:
           pattern: station-*
           path: artifacts
-      - name: Publish plugin packages to the assets branch
+      - name: Publish plugin packages and station archives to the assets branch
         run: |
           set -eu
           mkdir assets
-          cp artifacts/*/plugin-spotify-*.zip assets/
-          (cd assets && sha256sum plugin-spotify-*.zip > SHA256SUMS && cat SHA256SUMS)
+          cp artifacts/*/plugin-spotify-*.zip artifacts/*/station-*.zip assets/
+          (cd assets && sha256sum plugin-spotify-*.zip station-*.zip > SHA256SUMS && cat SHA256SUMS)
           cd assets
           git init -q -b "$ASSETS_BRANCH"
           git config user.name "github-actions"
