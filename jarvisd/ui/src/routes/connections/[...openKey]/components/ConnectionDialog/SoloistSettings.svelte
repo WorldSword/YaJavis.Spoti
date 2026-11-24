@@ -32,7 +32,8 @@
   function save(event) {
     event.preventDefault();
     return run(async () => {
-      const next = await api("PUT", "/api/spotify/soloist", {
+      const installed = state.installed;
+      const next = await api(installed ? "PUT" : "POST", "/api/spotify/soloist" + (installed ? "" : "/install"), {
         device_name: deviceName.trim(),
         api_key: apiKey.trim() || undefined,
         client_id: clientId.trim() || undefined,
@@ -40,7 +41,8 @@
       });
       apiKey = clientId = clientSecret = "";
       apply(next);
-      message = next.warning || "Настройки сохранены";
+      message = next.warning || (installed ? "Настройки сохранены" :
+        "Soloist установлен. Если плагин Spotify уже включён, выключите его и включите снова.");
     });
   }
 
@@ -60,6 +62,16 @@
   }
 </script>
 
+{#snippet credentials(install)}
+    <form class="plg-form" onsubmit={save}>
+      <label>Имя устройства <input type="text" maxlength="128" bind:value={deviceName} disabled={busy} /></label>
+      <label>API-ключ Soloist <input type="password" autocomplete="new-password" required={install} placeholder={state.api_key_set ? "Задан" : ""} bind:value={apiKey} disabled={busy} /></label>
+      <label>Spotify Client ID <input type="password" autocomplete="new-password" placeholder={state.client_id_set ? "Задан" : ""} bind:value={clientId} disabled={busy} /></label>
+      <label>Spotify Client Secret <input type="password" autocomplete="new-password" placeholder={state.client_secret_set ? "Задан" : ""} bind:value={clientSecret} disabled={busy} /></label>
+      <button class="btn primary" type="submit" disabled={busy}>{install ? "Установить Soloist" : "Сохранить"}</button>
+    </form>
+{/snippet}
+
 <section class="cn-body plg-form" aria-label="Настройки Soloist">
   <h3>Soloist</h3>
   {#if state?.installed}
@@ -67,13 +79,7 @@
       {state.auth === "connected" ? "Spotify Connect подключён" :
         state.auth === "not_logged_in" ? "Требуется вход в Spotify Connect" : "Статус Spotify Connect недоступен"}</p>
     {#if state.audio_device}<p>Аудиовыход <code>{state.audio_device}</code></p>{/if}
-    <form class="plg-form" onsubmit={save}>
-      <label>Имя устройства <input type="text" maxlength="128" bind:value={deviceName} disabled={busy} /></label>
-      <label>API-ключ Soloist <input type="password" autocomplete="new-password" placeholder={state.api_key_set ? "Задан" : ""} bind:value={apiKey} disabled={busy} /></label>
-      <label>Spotify Client ID <input type="password" autocomplete="new-password" placeholder={state.client_id_set ? "Задан" : ""} bind:value={clientId} disabled={busy} /></label>
-      <label>Spotify Client Secret <input type="password" autocomplete="new-password" placeholder={state.client_secret_set ? "Задан" : ""} bind:value={clientSecret} disabled={busy} /></label>
-      <button class="btn primary" type="submit" disabled={busy}>Сохранить</button>
-    </form>
+    {@render credentials(false)}
     <div class="row soloist-actions">
       <button class="btn" type="button" disabled={busy} onclick={() => action("restart")}>Перезапустить Soloist</button>
       <button class="btn" type="button" disabled={busy} onclick={() => action("check")}>Проверить звук</button>
@@ -84,7 +90,8 @@
     </div>
   {:else if state}
     <p>Soloist не установлен на колонке.</p>
-    <a class="lnk" href="https://github.com/Horohi/soloist-station-lite" target="_blank" rel="noopener">Установка Soloist</a>
+    <a class="lnk" href="https://developer.spotify.com/dashboard/soloist" target="_blank" rel="noopener">Получить API-ключ Soloist</a>
+    {@render credentials(true)}
   {/if}
   {#if busy}<p role="status">Выполняется операция Soloist…</p>{/if}
   {#if message}<p role="status">{message}</p>{/if}

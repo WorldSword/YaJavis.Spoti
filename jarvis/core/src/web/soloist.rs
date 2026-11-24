@@ -389,3 +389,90 @@ mod tests {
         assert!(!valid("line\nbreak"));
     }
 }
+
+const INSTALL_URL: &str = "https://github.com/Horohi/soloist-station-lite/releases/download/v1.3.18/soloist-station-lite.tar.gz";
+const INSTALL_SHA256: &str = "445c60bc4698f8ba0d3f623fcc7f8d185a9b0e6f6dc8187d18f07885468a71dc";
+const INSTALL_BYTES: usize = 17_939_446;
+
+async fn install_archive(dir: &Path, args: [&str; 4]) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncWriteExt;
+
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(180)).build()
+        .map_err(|_| "Не удалось подготовить загрузку Soloist")?;
+    let mut response = client.get(INSTALL_URL).send().await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| "GitHub не отдал официальный пакет Soloist")?;
+    let archive = dir.join("soloist.tar.gz");
+    let mut file = tokio::fs::File::create(&archive).await.map_err(|_| "Не удалось создать файл пакета Soloist")?;
+    let mut bytes = 0;
+    let mut digest = Sha256::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Загрузка Soloist прервалась")? {
+        bytes += chunk.len();
+        if bytes > INSTALL_BYTES { return Err("Размер пакета Soloist изменился".into()); }
+        digest.update(&chunk);
+        file.write_all(&chunk).await.map_err(|_| "Не удалось записать пакет Soloist")?;
+    }
+    file.flush().await.map_err(|_| "Не удалось записать пакет Soloist")?;
+    drop(file);
+    if bytes != INSTALL_BYTES || hex::encode(digest.finalize()) != INSTALL_SHA256 {
+        return Err("Контрольная сумма официального пакета Soloist не совпала".into());
+    }
+
+    let dir = dir.to_str().ok_or("Некорректный путь установки")?;
+    shell(r#"cd "$1" && mkdir src && tar -xzf soloist.tar.gz -C src"#, &[dir], 60).await
+        .map_err(|_| "Не удалось распаковать официальный пакет Soloist")?;
+    shell(r#"
+cd "$1/src" || exit 1
+{ printf '%s\n%s\n' "$4" "$5"; yes ''; } | sh ./install.sh "$2" "$3" >/dev/null 2>&1
+"#, &[dir, args[0], args[1], args[2], args[3]], 480).await
+        .map_err(|_| "Официальный установщик Soloist завершился ошибкой")?;
+    Ok(())
+}
+
+async fn install_soloist(input: Update) -> Result<Value, String> {
+    let api_key = input.api_key.as_deref().unwrap_or_default();
+    let device_name = input.device_name.as_deref().unwrap_or_default();
+    let client_id = input.client_id.as_deref().unwrap_or_default();
+    let client_secret = input.client_secret.as_deref().unwrap_or_default();
+    let args = [api_key, device_name, client_id, client_secret];
+    if !api_key.starts_with("spak_") || !args.iter().all(|v| valid(v)) {
+        return Err("Укажите действительный формат API-ключа Soloist и проверьте остальные поля".into());
+    }
+    if client_id.is_empty() != client_secret.is_empty() {
+        return Err("Укажите оба поля Spotify Web API или оставьте оба пустыми".into());
+    }
+
+    let dir = Path::new("/data/local/tmp").join(format!("jarvis-soloist-{}", crate::settings::rand_hex(12)));
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(&dir).map_err(|_| "Не удалось создать временную папку Soloist")?;
+    let result = install_archive(&dir, args).await;
+    if fs::remove_dir_all(&dir).is_err() {
+        log::warn!("Soloist: не удалось удалить временную папку установки");
+    }
+    result?;
+    let soloist = soloist().ok_or("Установщик завершился, но Soloist не найден")?;
+    Ok(info(Some(&soloist)).await)
+}
+
+pub async fn install_now(State(app): State<App>, Json(input): Json<Update>) -> Response {
+    let Ok(guard) = app.soloist_update.clone().try_lock_owned() else { return bad("Выполняется операция Soloist"); };
+    if soloist().is_some() || Path::new("/data/opt/soloist/start.sh").is_file() {
+        return bad("Soloist уже установлен");
+    }
+    let result = tokio::spawn(async move {
+        let _guard = guard;
+        install_soloist(input).await
+    }).await;
+    match result {
+        Ok(Ok(state)) => reply(StatusCode::OK, state),
+        Ok(Err(error)) => bad(error),
+        Err(_) => bad("Установка Soloist прервалась"),
+    }
+}
+

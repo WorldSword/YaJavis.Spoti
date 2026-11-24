@@ -175,6 +175,7 @@ pub fn router(app: App) -> Router {
         .route("/api/speaker/volume", post(talk::volume))
         .route("/api/music", get(music::get).post(music::post))
         .route("/api/spotify/soloist", get(soloist::get).put(soloist::put))
+        .route("/api/spotify/soloist/install", post(soloist::install_now))
         .route("/api/spotify/soloist/restart", post(soloist::restart_now))
         .route("/api/spotify/soloist/check", post(soloist::check))
         .route("/api/spotify/soloist/tune", post(soloist::tune_now))
