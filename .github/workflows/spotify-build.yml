@@ -8,8 +8,8 @@ on:
 permissions:
   contents: write
 env:
-  CORE_VERSION: 0.10.19
-  ASSETS_BRANCH: spotify-assets
+  CORE_VERSION: 0.10.21
+  ASSETS_BRANCH: spotify-assets-0.10.21
 jobs:
   test:
     runs-on: ubuntu-latest

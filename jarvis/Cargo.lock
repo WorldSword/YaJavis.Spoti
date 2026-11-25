@@ -1281,7 +1281,7 @@ checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
 name = "jarvis"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1313,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-chatgpt"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-cloud"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -1341,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-dsp"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "serde",
  "serde_json",
@@ -1349,7 +1349,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-home-common"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-homeassistant"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "axum",
  "futures-util",
@@ -1377,14 +1377,14 @@ dependencies = [
 
 [[package]]
 name = "jarvis-native-plugins"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "jarvis-plugin-sdk",
 ]
 
 [[package]]
 name = "jarvis-official-plugin"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-setup"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "axum",
  "bcrypt",
@@ -1441,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-smartlife"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-spotify"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "jarvis-home-common",
  "log",
@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-station"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "libc",
  "serde",
@@ -1481,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-vpn"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -1507,14 +1507,14 @@ dependencies = [
 
 [[package]]
 name = "jarvis-wake-train"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "jarvis-dsp",
 ]
 
 [[package]]
 name = "jarvis-xiaomi"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "base64 0.22.1",
  "jarvis-home-common",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-yandexhome"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "axum",
  "regex-lite",
@@ -1540,7 +1540,7 @@ dependencies = [
 
 [[package]]
 name = "jarvis-youtube"
-version = "0.10.19"
+version = "0.10.21"
 dependencies = [
  "base64 0.22.1",
  "hex",
