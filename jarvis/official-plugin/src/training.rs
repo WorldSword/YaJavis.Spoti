@@ -23,14 +23,22 @@ impl Training {
             .map(PathBuf::from)
             .ok_or("Нет каталога моделей")?;
         let data = std::env::current_dir().map_err(|error| error.to_string())?;
+        let records = Records::new(data);
+        records.kick_startup_offload();
         Ok(Self {
             core,
-            records: Arc::new(Records::new(data)),
+            records,
             ring: Mutex::new(Vec::new()),
         })
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result {
+        let field = |name| {
+            params[name]
+                .as_str()
+                .ok_or_else(|| format!("Нет поля {name}"))
+        };
+        let spool = || field("file").map(PathBuf::from);
         match method {
             "training.observe" => {
                 let bytes = B64
@@ -60,17 +68,50 @@ impl Training {
                 ring.extend_from_slice(&pcm);
                 if !discard {
                     let prob = params["prob"].as_f64().unwrap_or(0.) as f32;
+                    let trigger_tail = params["trigger_tail"].as_u64().unwrap_or(0) as usize;
                     let loud = pcm.iter().any(|sample| !(-600..=600).contains(sample));
                     if let Some(kind) = self.records.sample_kind(hit, prob, loud) {
                         let clip = &ring[ring.len().saturating_sub(RATE * 3)..];
                         if clip.len() >= RATE {
                             let limit = params["limit"].as_i64().unwrap_or(1);
-                            self.records
-                                .save_soon(&rt, kind, clip.to_vec(), prob, limit);
+                            let wake_id = params["wake_id"]
+                                .as_str()
+                                .filter(|s| !s.is_empty() && kind == "pos")
+                                .map(str::to_owned);
+                            let trigger_ms = (kind != "bg").then(|| {
+                                (clip.len().saturating_sub(trigger_tail) * 1000 / RATE) as u32
+                            });
+                            self.records.save_soon(
+                                &rt,
+                                kind,
+                                clip.to_vec(),
+                                prob,
+                                trigger_ms,
+                                limit,
+                                wake_id,
+                            );
                         }
                     }
                 }
                 Ok(Value::Null)
+            }
+            "training.review_wake" => {
+                let wake_id = field("wake_id")?;
+                let label = field("label")?;
+                let pcm = if let Some(b64) = params["pcm"].as_str().filter(|s| !s.is_empty()) {
+                    let bytes = B64.decode(b64).map_err(|error| error.to_string())?;
+                    bytes
+                        .chunks_exact(2)
+                        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let prob = params["prob"].as_f64().unwrap_or(0.95) as f32;
+                let limit = params["limit"].as_i64().unwrap_or(1);
+                self.records
+                    .review_wake(wake_id, label, &pcm, prob, limit)
+                    .await
             }
             "training.background.status" => Ok(self.records.background.status()),
             "training.background.start" => {
@@ -86,51 +127,44 @@ impl Training {
                 Ok(self.records.background.status())
             }
             "training.background.connect" => {
-                let login = serde_json::from_value(params).map_err(|error| error.to_string())?;
-                self.records.background.connect(login).await?;
+                self.records.background.connect().await?;
                 Ok(self.records.background.status())
             }
             "training.background.disconnect" => {
                 self.records.background.disconnect().await?;
                 Ok(self.records.background.status())
             }
-            method => {
-                let method = method.to_owned();
-                let core = self.core.clone();
-                let records = self.records.clone();
-                tokio::task::spawn_blocking(move || Self::files(&method, params, records, core))
-                    .await
-                    .map_err(|error| error.to_string())?
-            }
-        }
-    }
-
-    fn files(method: &str, params: Value, records: Arc<Records>, core: PathBuf) -> Result {
-        let field = |name| {
-            params[name]
-                .as_str()
-                .ok_or_else(|| format!("Нет поля {name}"))
-        };
-        let spool = || field("file").map(PathBuf::from);
-        match method {
             "training.records" => {
-                let previous = core
+                let previous = self
+                    .core
                     .join("plugins/training/data/wake.bin.tuned.prev")
                     .is_file();
-                Ok(records.snapshot(
-                    params["mode"] == true,
-                    params["limit"].as_i64().unwrap_or(1),
-                    previous,
-                ))
+                Ok(self
+                    .records
+                    .snapshot(
+                        params["mode"] == true,
+                        params["voice_review"] == true,
+                        params["limit"].as_i64().unwrap_or(1),
+                        previous,
+                        params["refresh"] == true,
+                    )
+                    .await)
             }
-            "training.compact" => records.compact(),
-            "training.clear" => records.clear().map(|_| Value::Null),
-            "training.move" => records
-                .move_clip(field("kind")?, field("name")?, field("to")?)
-                .map(|_| Value::Null),
+            "training.clear" => {
+                self.records.clear().await?;
+                Ok(Value::Null)
+            }
+            "training.move" => {
+                self.records
+                    .move_clip(field("kind")?, field("name")?, field("to")?)
+                    .await?;
+                Ok(Value::Null)
+            }
             "training.clip" => {
-                let clip = records.read(field("kind")?, field("name")?)?;
-                fs::write(spool()?, clip).map_err(|error| error.to_string())?;
+                let clip = self.records.read(field("kind")?, field("name")?).await?;
+                tokio::fs::write(spool()?, clip)
+                    .await
+                    .map_err(|error| error.to_string())?;
                 Ok(Value::Null)
             }
             "training.archive" => {
@@ -142,7 +176,7 @@ impl Training {
                     stream
                         .set_write_timeout(Some(std::time::Duration::from_secs(35)))
                         .map_err(|error| error.to_string())?;
-                    records.archive(&core, sensitivity, stream)?;
+                    self.records.archive(&self.core, sensitivity, stream).await?;
                     return Ok(Value::Null);
                 }
                 let file = fs::OpenOptions::new()
@@ -150,20 +184,32 @@ impl Training {
                     .truncate(true)
                     .open(spool()?)
                     .map_err(|error| error.to_string())?;
-                records.archive(&core, sensitivity, file)?;
+                self.records.archive(&self.core, sensitivity, file).await?;
                 Ok(Value::Null)
             }
+            "training.compact" => {
+                let records = self.records.clone();
+                tokio::task::spawn_blocking(move || records.compact())
+                    .await
+                    .map_err(|error| error.to_string())?
+            }
             "training.train" => {
-                let features = fs::File::open(core.join("oww.bin"))
-                    .map_err(|_| "На колонке нет слоя признаков openWakeWord")?;
-                let mut bytes = Vec::new();
-                features
-                    .take(4 << 20)
-                    .read_to_end(&mut bytes)
-                    .map_err(|error| error.to_string())?;
-                let input = fs::read(spool()?).map_err(|error| error.to_string())?;
-                let model = jarvis_wake_train::train(&bytes, &input)?;
-                Ok(json!(B64.encode(model)))
+                let core = self.core.clone();
+                let path = spool()?;
+                tokio::task::spawn_blocking(move || {
+                    let features = fs::File::open(core.join("oww.bin"))
+                        .map_err(|_| "На колонке нет слоя признаков openWakeWord")?;
+                    let mut bytes = Vec::new();
+                    features
+                        .take(4 << 20)
+                        .read_to_end(&mut bytes)
+                        .map_err(|error| error.to_string())?;
+                    let input = fs::read(path).map_err(|error| error.to_string())?;
+                    let model = jarvis_wake_train::train(&bytes, &input)?;
+                    Ok(json!(B64.encode(model)))
+                })
+                .await
+                .map_err(|error| error.to_string())?
             }
             _ => Err(format!("Плагин не поддерживает метод {method}")),
         }

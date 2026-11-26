@@ -647,14 +647,22 @@ impl Engine {
                         } else {
                             false
                         };
+                        let wake_id = (!busy && live.is_none() && hit)
+                            .then(|| format!("w{}", crate::settings::rand_hex(6)));
                         if collect || background {
                             let limit = e.store.train_limit_mb();
                             let discard = busy || live.is_some() || e.saying.load(Ordering::Relaxed) || e.player.playing() || !ready || !enabled;
-                            if let Some(frame) = batch.push(&raw, hit, discard, prob, collect, limit) {
+                            if let Some(frame) = batch.push(&raw, hit, wake_id.as_deref(), discard, prob, collect, limit) {
                                 let _ = training.try_send(frame);
                             }
                         } else {
                             batch.reset();
+                        }
+                        if live.is_none() && !busy && hit {
+                            let p = det.wake_prob();
+                            det.reset(); // хвост этого же слова не должен сработать ещё раз
+                            e.trigger_with_wake("слово", p, wake_id);
+                            continue;
                         }
                     } else {
                         batch.reset();
@@ -785,6 +793,10 @@ impl Engine {
 
     /// Начать разговор (по слову, по кнопке в настройках).
     pub fn trigger(self: &Arc<Self>, source: &str, prob: f32) {
+        self.trigger_with_wake(source, prob, None);
+    }
+
+    fn trigger_with_wake(self: &Arc<Self>, source: &str, prob: f32, wake_id: Option<String>) {
         if source == "слово" && self.recording_word.load(Ordering::Acquire) { return; }
         let (clip, wake_at) = {
             let mut st = self.st.lock().unwrap();
@@ -847,7 +859,7 @@ impl Engine {
                 }
                 let mut guard = ConverseGuard { engine: &e, completed: false };
                 let preroll = if by_word { clip.clone() } else { vec![] };
-                let failure = e.converse(by_word, sure, preroll, clip, wake_at);
+                let failure = e.converse(by_word, sure, preroll, clip, wake_at, prob, wake_id);
                 guard.completed = true;
                 let queued = {
                     let mut st = e.st.lock().unwrap();
@@ -1132,6 +1144,8 @@ impl Engine {
         preroll: Vec<i16>,
         clip: Vec<i16>,
         wake_at: Instant,
+        wake_prob: f32,
+        wake_id: Option<String>,
     ) -> Option<crate::voice_error::VoiceFailure> {
         let s = self.store.get();
         let p = s.active_profile();
@@ -1182,7 +1196,30 @@ impl Engine {
         let opening_at = wake_at;
         let mut ready_at = Instant::now();
         let mut last_voice: Option<Instant> = None;
-        let _ = (sure, &clip);
+        let mut close_armed_at: Option<Instant> = None;
+        let close_after_flag = Arc::new(AtomicBool::new(false));
+        let wake_ctx = (by_word
+            && self.store.train_voice_review()
+            && self.host.provider("training").is_ok()
+            && self.listener.is_default_phrase()
+            && !std::path::Path::new("/data/opt/jarvisd/no-mic").exists()
+            && !clip.is_empty())
+        .then(|| {
+            let wid = wake_id.unwrap_or_else(|| format!("w{}", crate::settings::rand_hex(6)));
+            crate::tools::ActiveWake {
+                wake_id: wid,
+                clip: clip.clone(),
+                prob: wake_prob,
+            }
+        });
+        let _session_guard = self.tools.enter_voice_session(crate::tools::VoiceSessionContext {
+            close_after_reply: {
+                let flag = close_after_flag.clone();
+                Arc::new(move || flag.store(true, Ordering::SeqCst))
+            },
+            wake: wake_ctx,
+        });
+        let _ = sure;
 
         // открыть разговор с моделью и отдать ему весь звук с момента слова
         let open = |sess: &mut Option<Arc<dyn Session>>, out: &mut Option<std::sync::mpsc::Receiver<Vec<i16>>>, ready_at: &mut Instant| -> Result<(), Option<crate::voice_error::VoiceFailure>> {
@@ -1365,6 +1402,22 @@ impl Engine {
                 close(&sess);
                 return None;
             }
+            if close_after_flag.load(Ordering::SeqCst) || x.dialog().close_after_reply_requested() {
+                let armed = *close_armed_at.get_or_insert_with(Instant::now);
+                let wait = if x.dialog().is_turn_complete() {
+                    Duration::from_millis(300)
+                } else {
+                    Duration::from_millis(800)
+                };
+                let done_speaking = last_voice.is_some_and(|t| t >= armed && t.elapsed() >= wait);
+                if done_speaking || armed.elapsed() >= Duration::from_secs(8) {
+                    log::info!("разговор: завершён после подтверждения инструмента");
+                    self.player.finish(Duration::from_secs(3));
+                    x.dialog().finish_turn("");
+                    close(&sess);
+                    return None;
+                }
+            }
             if tick.elapsed() < Duration::from_millis(100) {
                 continue;
             }
@@ -1447,6 +1500,17 @@ impl Engine {
             quiet();
             log::info!("Джарвис: «{text}» — разговор закрыт, музыка не тронута ({from})");
             note("стоп", "");
+            return true;
+        }
+        if self.store.with(|s| s.profiles.len() > 1)
+            && let Some(target) = fastcmd::profile_switch_target(&cmd)
+        {
+            let answer = match self.tools.switch_profile(&target) {
+                Ok(answer) | Err(answer) => answer,
+            };
+            quiet();
+            note("профиль", &answer);
+            (self.say_hook())(answer);
             return true;
         }
         if let Some(answer) = self.rt.block_on(self.music.spotify_intent(&self.host, &cmd)) {
@@ -1583,6 +1647,7 @@ impl Engine {
             return Err(missing);
         }
         let t0 = Instant::now();
+        const READ_ALOUD: &str = "Ты озвучиваешь готовый текст. Произнеси ровно то, что тебе дали, ничего не добавляя, и замолчи.";
         let sess: Arc<dyn Session> = if p.is_classic() {
             crate::classic_voice::Classic::open_with(
                 &self.rt,
@@ -1591,10 +1656,26 @@ impl Engine {
                 Arc::new(Journal::default()),
                 s.clone(),
                 p.clone(),
-                "Ты озвучиваешь готовый текст. Произнеси ровно то, что тебе дали, ничего не добавляя, и замолчи.".into(),
+                READ_ALOUD.into(),
                 self.listener.phrase(),
                 Some(self.gemini_pool.clone()),
                 Some(self.proxy.clone()),
+            )
+        } else if ["", "live", "openai", "gemini", "grok", "eleven_realtime"].contains(&p.engine.as_str()) {
+            crate::cloud_voice::Voice::open_with(
+                &self.rt,
+                self.host.clone(),
+                None,
+                Arc::new(Journal::default()),
+                s.clone(),
+                p.clone(),
+                READ_ALOUD.into(),
+                crate::cloud_voice::VoiceOptions {
+                    gemini_pool: Some(self.gemini_pool.clone()),
+                    store: Some(self.store.clone()),
+                    proxy: Some(self.proxy.clone()),
+                    allow_failover: true,
+                },
             )
         } else {
             chatgpt::ChatGptSession::open(
@@ -1603,7 +1684,7 @@ impl Engine {
                     host: self.host.clone(),
                     voice: p.voice.clone(),
                     thread: self.chat_thread().into(),
-                    instructions: "Ты озвучиваешь готовый текст. Произнеси ровно то, что тебе дали, ничего не добавляя, и замолчи.".into(),
+                    instructions: READ_ALOUD.into(),
                     brain: None,
                     journal: Arc::new(Journal::default()),
                     memory: None,
@@ -1617,7 +1698,23 @@ impl Engine {
         res
     }
 
+    fn clear_say_leds(&self, active: bool) {
+        if active && !self.st.lock().unwrap_or_else(|p| p.into_inner()).busy {
+            self.leds.set(Mode::Off);
+        }
+    }
+
     fn play_said(&self, sess: &dyn Session, text: &str, limit: Duration, t0: Instant, epoch: u64) -> Result<(), String> {
+        struct SayLedGuard<'a> {
+            engine: &'a Engine,
+            active: bool,
+        }
+        impl Drop for SayLedGuard<'_> {
+            fn drop(&mut self) {
+                self.engine.clear_say_leds(self.active);
+            }
+        }
+        let mut led_guard = SayLedGuard { engine: self, active: false };
         sess.ready(Duration::from_secs(10).min(limit))?;
         if self.speech_epoch.load(Ordering::SeqCst) != epoch { return Err(INTERRUPTED.into()); }
         sess.say(text)?;
@@ -1651,6 +1748,7 @@ impl Engine {
                         // плеер — только с первым звуком, а не пока модель думает
                         self.start_voice(sess)?;
                         self.leds.set(Mode::Speaking);
+                        led_guard.active = true;
                         let _ = self.player.write(&vec![0; sess.rate() / 4]);
                         started = true;
                     }
@@ -2207,5 +2305,48 @@ mod tests {
         assert!(!super::should_wake_interrupt(true, true, false, Some(now - ms(800)), 0.72, now));
         // Уверенный оклик после окна сходимости — перебиваем.
         assert!(super::should_wake_interrupt(true, true, false, Some(now - ms(800)), 0.92, now));
+    }
+
+    #[tokio::test]
+    async fn play_said_clears_leds_after_finishing_when_idle() {
+        let dir = std::env::temp_dir().join(format!("jarvis-say-led-{}", crate::settings::rand_hex(6)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = super::Store::open(dir.join("settings.json")).unwrap();
+        let host = super::Host::new(dir.clone(), crate::plugins::Hooks::default());
+        let proxy = crate::vpn::Proxy::new(store.clone());
+        let mic = super::Mic::new(dir.join("mic.sock"), Box::new(|| 0));
+        let player = super::Player::new(Box::new(|| 40), Box::new(|| 1.0));
+        let leds = super::Leds::new(Box::new(crate::settings::default_led));
+        let journal = std::sync::Arc::new(super::Journal::default());
+        let tools = std::sync::Arc::new(super::Tools::new(host.clone(), store.clone()));
+        let (listener, _) = super::Listener::new(&dir, &store, false);
+        let music = std::sync::Arc::new(crate::music::Music::default());
+        let engine = super::Engine::new(
+            tokio::runtime::Handle::current(),
+            store,
+            host,
+            proxy,
+            mic,
+            player,
+            leds.clone(),
+            journal,
+            tools,
+            listener,
+            dir.clone(),
+            music,
+        );
+
+        // После озвучки из панели (st.busy == false) подсветка должна вернуться в Mode::Off.
+        leds.set(super::Mode::Speaking);
+        assert_eq!(leds.phase(), super::Mode::Speaking);
+        engine.clear_say_leds(true);
+        assert_eq!(leds.phase(), super::Mode::Off);
+
+        // Если озвучку перебила новая активация разговора (st.busy == true), чужой Mode::Listening не сбрасываем.
+        engine.st.lock().unwrap().busy = true;
+        leds.set(super::Mode::Listening);
+        engine.clear_say_leds(true);
+        assert_eq!(leds.phase(), super::Mode::Listening);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

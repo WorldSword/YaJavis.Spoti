@@ -266,7 +266,10 @@ impl Music {
         .contains(&op)
         {
             70
-        } else if matches!(op, "cookies_set" | "account_begin" | "library" | "playlist_items") {
+        } else if matches!(
+            op,
+            "cookies_set" | "account_begin" | "library" | "playlist_items" | "search" | "like"
+        ) {
             30
         } else {
             10
@@ -799,6 +802,27 @@ pub fn command(text: &str) -> Option<(&'static str, Value, &'static str)> {
     ]) {
         return Some(("related", json!({"expected":""}), ""));
     }
+    if starts(&[
+        "поставь лайк",
+        "лайкни",
+        "нравится этот трек",
+        "добавь в лайки",
+        "добавь в понравившиеся",
+    ]) || t == "лайк"
+    {
+        return Some(("like", json!({"liked": true}), "Поставил лайк."));
+    }
+    if starts(&[
+        "убери лайк",
+        "сними лайк",
+        "удали лайк",
+        "убери из лайков",
+        "убери из понравившихся",
+        "удали из лайков",
+        "удали из понравившихся",
+    ]) {
+        return Some(("like", json!({"liked": false}), "Убрал лайк."));
+    }
     None
 }
 
@@ -875,7 +899,7 @@ pub fn volume_loop(music: Arc<Music>, host: Arc<Host>, duck: impl Fn() -> bool +
                     return;
                 }
             }
-            let v = if duck() { 0.16 } else { 0.8 };
+            let v = if duck() { 0.18 } else { 0.95 };
             if v != last
                 && let Ok(n) = host.provider("youtube")
                 && n.notify("volume", json!({"v": v})).await.is_ok()
@@ -1085,6 +1109,14 @@ mod tests {
         assert_eq!(command("выключи повтор").unwrap().1, json!({"on": false}));
         assert_eq!(command("не повторяй").unwrap().1, json!({"on": false}));
         assert!(command("повтори что ты сказал").is_none());
+    }
+
+    #[test]
+    fn like_voice_commands_toggle_like() {
+        assert_eq!(command("поставь лайк").unwrap(), ("like", json!({"liked": true}), "Поставил лайк."));
+        assert_eq!(command("Джарвис, лайкни этот трек").unwrap().1, json!({"liked": true}));
+        assert_eq!(command("убери лайк").unwrap(), ("like", json!({"liked": false}), "Убрал лайк."));
+        assert_eq!(command("удали из понравившихся").unwrap().1, json!({"liked": false}));
     }
 
     #[test]

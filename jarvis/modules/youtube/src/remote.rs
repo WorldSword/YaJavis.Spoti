@@ -1,4 +1,5 @@
 use crate::player_script::{Prepared, Scripts};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use jarvis_home_common::{Host, json as response_json};
 use reqwest::{Client, Url, header::HeaderMap};
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,122 @@ pub struct Playlist {
     )]
     pub thumb: String,
 }
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchItem {
+    pub kind: String,
+    #[serde(rename = "ID", alias = "id", default)]
+    pub id: String,
+    #[serde(rename = "Title", alias = "title", default)]
+    pub title: String,
+    #[serde(rename = "Author", alias = "author", default)]
+    pub author: String,
+    #[serde(
+        rename = "Duration",
+        alias = "duration",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub duration: String,
+    #[serde(
+        rename = "Views",
+        alias = "views",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub views: String,
+    #[serde(
+        rename = "Published",
+        alias = "published",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub published: String,
+    #[serde(
+        rename = "Count",
+        alias = "count",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub count: String,
+    #[serde(
+        rename = "Thumb",
+        alias = "thumb",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub thumb: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchFilter {
+    pub kind: String,
+    pub sort: String,
+    pub date: String,
+    pub duration: String,
+    pub live: bool,
+}
+
+pub(crate) fn encode_search_params(f: &SearchFilter) -> Option<String> {
+    let mut buf = Vec::new();
+    let sort_code = match f.sort.as_str() {
+        "rating" => Some(1u8),
+        "date" => Some(2u8),
+        "views" => Some(3u8),
+        _ => None,
+    };
+    if let Some(code) = sort_code {
+        buf.push(0x08);
+        buf.push(code);
+    }
+
+    let mut sub = Vec::new();
+    if let Some(date_code) = match f.date.as_str() {
+        "hour" => Some(1u8),
+        "today" => Some(2u8),
+        "week" => Some(3u8),
+        "month" => Some(4u8),
+        "year" => Some(5u8),
+        _ => None,
+    } {
+        sub.push(0x08);
+        sub.push(date_code);
+    }
+    if let Some(type_code) = match f.kind.as_str() {
+        "video" => Some(1u8),
+        "playlist" => Some(3u8),
+        _ => None,
+    } {
+        sub.push(0x10);
+        sub.push(type_code);
+    }
+    if f.kind != "playlist" {
+        if let Some(dur_code) = match f.duration.as_str() {
+            "short" => Some(1u8),
+            "long" => Some(2u8),
+            "medium" => Some(3u8),
+            _ => None,
+        } {
+            sub.push(0x18);
+            sub.push(dur_code);
+        }
+        if f.live {
+            sub.push(0x40);
+            sub.push(1u8);
+        }
+    }
+
+    if !sub.is_empty() {
+        buf.push(0x12);
+        buf.push(sub.len() as u8);
+        buf.extend_from_slice(&sub);
+    }
+    if buf.is_empty() {
+        None
+    } else {
+        Some(STANDARD.encode(&buf))
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AccountProfile {
     pub name: String,
@@ -111,6 +228,7 @@ pub struct Stream {
     pub duration: f64,
     pub ready: Instant,
     pub itag: u64,
+    pub bitrate: u64,
 }
 pub struct Remote {
     host: Arc<Host>,
@@ -119,11 +237,15 @@ pub struct Remote {
 }
 impl Remote {
     pub fn new(host: Arc<Host>) -> Self {
+        let scripts = Scripts::with_cache(host.data.join("player-cache.json.gz"));
         Self {
             host,
-            scripts: Default::default(),
+            scripts,
             visitor: Default::default(),
         }
+    }
+    pub fn invalidate_player_cache(&self) {
+        self.scripts.invalidate();
     }
     pub async fn warm(&self) -> Result<(), String> {
         self.scripts
@@ -159,6 +281,106 @@ impl Remote {
         }
         Ok(vec![])
     }
+
+    pub async fn search_filtered(
+        &self,
+        query: &str,
+        filter: &SearchFilter,
+        mut headers: HeaderMap,
+    ) -> Result<Vec<SearchItem>, String> {
+        strip_bearer(&mut headers);
+        let mut body = json!({"context":{"client":web()},"query":query});
+        if let Some(params) = encode_search_params(filter) {
+            body["params"] = params.into();
+        }
+        let client = self.host.client().await?;
+        let data = post(&client, "search", WEB_AGENT, &body, headers).await?;
+        self.note_visitor(&data);
+        let section = &data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]
+            ["sectionListRenderer"]["contents"];
+        let mut items = Vec::new();
+        parse_search_items(section, &filter.kind, &mut items, &mut HashSet::new(), 0);
+        Ok(items)
+    }
+
+    pub async fn oembed(&self, id: &str) -> Result<Track, String> {
+        if !valid_id(id) {
+            return Err("Неверный ID видео YouTube".into());
+        }
+        let client = self.host.client().await?;
+        let url = format!(
+            "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={id}&format=json"
+        );
+        let response = client
+            .get(url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(|_| "Нет соединения с YouTube")?;
+        if !response.status().is_success() {
+            return Err(format!("YouTube oEmbed ответил {}", response.status().as_u16()));
+        }
+        let data = response_json(response).await?;
+        Ok(Track {
+            id: id.into(),
+            title: text_label(&data["title"]).trim().to_string(),
+            author: text_label(&data["author_name"]).trim().to_string(),
+        })
+    }
+
+    pub async fn set_like(&self, id: &str, liked: bool, headers: HeaderMap) -> Result<(), String> {
+        if !valid_id(id) {
+            return Err("Неверный ID видео YouTube".into());
+        }
+        if headers.is_empty() {
+            return Err("Войдите в аккаунт YouTube в настройках".into());
+        }
+        let endpoint = if liked { "like/like" } else { "like/removelike" };
+        let innertube_err = match self
+            .post_client(endpoint, json!({"target": {"videoId": id}}), headers.clone())
+            .await
+        {
+            Ok(data) => {
+                if data["responseContext"]["mainAppWebResponseContext"]["loggedOut"] == true {
+                    return Err("YouTube просит войти заново".into());
+                }
+                return Ok(());
+            }
+            Err(e) if e.contains("401") || e.contains("403") => {
+                return Err("YouTube просит войти заново".into());
+            }
+            Err(e) => e,
+        };
+        if has_bearer(&headers) {
+            let Some(auth) = bearer_headers(&headers) else {
+                return Err(innertube_err);
+            };
+            let rating = if liked { "like" } else { "none" };
+            let response = self
+                .host
+                .client()
+                .await?
+                .post("https://www.googleapis.com/youtube/v3/videos/rate")
+                .query(&[("id", id), ("rating", rating)])
+                .headers(auth)
+                .header(reqwest::header::CONTENT_LENGTH, 0)
+                .send()
+                .await
+                .map_err(|_| "Нет соединения с Google")?;
+            if response.status().as_u16() == 401 {
+                return Err("YouTube просит войти заново".into());
+            }
+            if !response.status().is_success() {
+                return Err(format!(
+                    "YouTube не смог обновить лайк ({})",
+                    response.status().as_u16()
+                ));
+            }
+            return Ok(());
+        }
+        Err(innertube_err)
+    }
+
     pub async fn recommendations(&self, headers: HeaderMap) -> Result<Vec<Track>, String> {
         if headers.is_empty() {
             return Ok(Vec::new());
@@ -231,9 +453,17 @@ impl Remote {
             return Ok(AccountProfile::default());
         }
         let mut profile = AccountProfile::default();
-        for endpoint in ["account/account_menu", "account/accounts_list"] {
-            if let Ok(data) = self.post_client(endpoint, json!({}), headers.clone()).await {
-                profile.merge_missing(parse_account_profile(&data));
+        for (endpoint, body) in [
+            ("account/account_menu", json!({})),
+            (
+                "account/accounts_list",
+                json!({"accountReadMask": {"returnOwner": true, "returnBrandAccounts": true}}),
+            ),
+            ("account/accounts_list", json!({})),
+        ] {
+            match self.post_client(endpoint, body, headers.clone()).await {
+                Ok(data) => profile.merge_missing(parse_account_profile(&data)),
+                Err(error) => log::debug!("YouTube: {endpoint} не вернул профиль: {error}"),
             }
             if !profile.name.is_empty() && (!profile.handle.is_empty() || !profile.email.is_empty())
             {
@@ -573,7 +803,7 @@ impl Remote {
             String::new()
         };
         let mut backup = None;
-        if !prefer_tv && auth.is_empty() && !self.scripts.cached() {
+        if !prefer_tv && auth.is_empty() && !self.scripts.has_warm_cache() {
             self.scripts.warm_background(client.clone());
             match vr(&client, id, &visitor).await {
                 Ok(value) => return Ok(value),
@@ -918,9 +1148,13 @@ pub(crate) fn organic_limit(
                 };
                 let track = match name {
                     "lockupViewModel" if item["contentType"] == "LOCKUP_CONTENT_TYPE_VIDEO" => {
-                        let title =
-                            &item["metadata"]["lockupMetadataViewModel"]["title"]["content"];
-                        identified(item["contentId"].as_str(), label(title), String::new())
+                        let meta = &item["metadata"]["lockupMetadataViewModel"];
+                        let title = &meta["title"]["content"];
+                        let author = label(
+                            &meta["metadata"]["contentMetadataViewModel"]["metadataRows"][0]
+                                ["metadataParts"][0]["text"]["content"],
+                        );
+                        identified(item["contentId"].as_str(), label(title), author)
                     }
                     "tileRenderer"
                         if matches!(
@@ -1024,14 +1258,39 @@ pub(crate) fn parse_account_profile(value: &Value) -> AccountProfile {
                         email: text_label(&hdr["email"]),
                     });
                 }
-                if let Some(item) = map.get("accountItemRenderer") {
-                    let byline = text_label(&item["accountByline"]);
-                    let (handle, email) = if byline.starts_with('@') {
-                        (byline, String::new())
-                    } else if byline.contains('@') {
-                        (String::new(), byline)
+                if let Some(hdr) = map.get("googleAccountHeaderRenderer") {
+                    let name = text_label(&hdr["name"]);
+                    let name = if name.is_empty() {
+                        text_label(&hdr["accountName"])
                     } else {
-                        (String::new(), String::new())
+                        name
+                    };
+                    header.merge_missing(AccountProfile {
+                        name,
+                        handle: text_label(&hdr["channelHandle"]),
+                        email: text_label(&hdr["email"]),
+                    });
+                }
+                if let Some(item) = map
+                    .get("accountItemRenderer")
+                    .or_else(|| map.get("accountItem"))
+                {
+                    let byline = text_label(&item["accountByline"]);
+                    let explicit_handle = text_label(&item["channelHandle"]);
+                    let explicit_email = text_label(&item["email"]);
+                    let handle = if !explicit_handle.is_empty() {
+                        explicit_handle
+                    } else if byline.starts_with('@') {
+                        byline.clone()
+                    } else {
+                        String::new()
+                    };
+                    let email = if !explicit_email.is_empty() {
+                        explicit_email
+                    } else if byline.contains('@') && !byline.starts_with('@') {
+                        byline
+                    } else {
+                        String::new()
                     };
                     let mut candidate = AccountProfile {
                         name: text_label(&item["accountName"]),
@@ -1044,6 +1303,15 @@ pub(crate) fn parse_account_profile(value: &Value) -> AccountProfile {
                     } else {
                         fallback_item.merge_missing(candidate);
                     }
+                }
+                if let Some(ch) = map.get("accountChannelRenderer") {
+                    let mut candidate = AccountProfile {
+                        name: text_label(&ch["title"]),
+                        handle: text_label(&ch["channelHandle"]),
+                        email: text_label(&ch["email"]),
+                    };
+                    candidate.normalize();
+                    fallback_item.merge_missing(candidate);
                 }
                 for child in map.values() {
                     walk(child, depth + 1, header, selected_item, fallback_item);
@@ -1064,7 +1332,7 @@ pub(crate) fn parse_account_profile(value: &Value) -> AccountProfile {
         &mut fallback_item,
     );
     header.merge_missing(selected_item);
-    if header.name.is_empty() {
+    if header.name.is_empty() || (header.handle.is_empty() && header.email.is_empty()) {
         header.merge_missing(fallback_item);
     }
     header.normalize();
@@ -1174,6 +1442,239 @@ pub(crate) fn parse_playlists(value: &Value) -> Vec<Playlist> {
     let mut out = Vec::new();
     walk(value, &mut out, &mut HashSet::new(), 0);
     out
+}
+
+fn has_live_badge(item: &Value) -> bool {
+    if item["badges"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|b| {
+            matches!(
+                b["metadataBadgeRenderer"]["style"].as_str(),
+                Some("BADGE_STYLE_TYPE_LIVE_NOW")
+            ) || label(&b["metadataBadgeRenderer"]["label"])
+                .to_lowercase()
+                .contains("эфир")
+        })
+    {
+        return true;
+    }
+    item["thumbnailOverlays"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|o| {
+            matches!(
+                o["thumbnailOverlayTimeStatusRenderer"]["style"].as_str(),
+                Some("LIVE")
+            )
+        })
+}
+
+pub(crate) fn parse_search_items(
+    value: &Value,
+    want_kind: &str,
+    out: &mut Vec<SearchItem>,
+    seen: &mut HashSet<String>,
+    depth: u8,
+) {
+    if out.len() >= 30 || depth >= 16 {
+        return;
+    }
+    let allow_video = want_kind != "playlist";
+    let allow_playlist = want_kind == "playlist" || want_kind == "all";
+    match value {
+        Value::Array(list) => {
+            for item in list {
+                parse_search_items(item, want_kind, out, seen, depth + 1);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(video) = map.get("videoRenderer") {
+                if allow_video {
+                    let id = video["videoId"].as_str().unwrap_or("");
+                    let title = label(&video["title"]);
+                    if valid_id(id)
+                        && !title.is_empty()
+                        && seen.insert(format!("video:{id}"))
+                    {
+                        let author = ["shortBylineText", "ownerText", "longBylineText"]
+                            .into_iter()
+                            .map(|k| label(&video[k]))
+                            .find(|s| !s.is_empty())
+                            .unwrap_or_default();
+                        let mut duration = label(&video["lengthText"]);
+                        if duration.is_empty() && has_live_badge(video) {
+                            duration = "Эфир".into();
+                        }
+                        let views = ["shortViewCountText", "viewCountText"]
+                            .into_iter()
+                            .map(|k| label(&video[k]))
+                            .find(|s| !s.is_empty())
+                            .unwrap_or_default();
+                        let published = label(&video["publishedTimeText"]);
+                        let mut thumb = thumb_url(video);
+                        if thumb.is_empty() {
+                            thumb = format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg");
+                        }
+                        out.push(SearchItem {
+                            kind: "video".into(),
+                            id: id.into(),
+                            title,
+                            author,
+                            duration,
+                            views,
+                            published,
+                            count: String::new(),
+                            thumb,
+                        });
+                    }
+                }
+                return;
+            }
+            if let Some(pl) = map.get("playlistRenderer") {
+                if allow_playlist {
+                    let id = pl["playlistId"]
+                        .as_str()
+                        .or_else(|| {
+                            pl["navigationEndpoint"]["browseEndpoint"]["browseId"]
+                                .as_str()
+                                .map(|s| s.strip_prefix("VL").unwrap_or(s))
+                        })
+                        .unwrap_or("");
+                    let title = label(&pl["title"]);
+                    if valid_playlist_id(id)
+                        && !id.starts_with("RD")
+                        && !title.is_empty()
+                        && seen.insert(format!("playlist:{id}"))
+                    {
+                        let author = ["shortBylineText", "longBylineText"]
+                            .into_iter()
+                            .map(|k| label(&pl[k]))
+                            .find(|s| !s.is_empty())
+                            .unwrap_or_default();
+                        let count = ["videoCountShortText", "videoCountText"]
+                            .into_iter()
+                            .map(|k| label(&pl[k]))
+                            .find(|s| !s.is_empty())
+                            .unwrap_or_default();
+                        out.push(SearchItem {
+                            kind: "playlist".into(),
+                            id: id.into(),
+                            title,
+                            author,
+                            duration: String::new(),
+                            views: String::new(),
+                            published: String::new(),
+                            count,
+                            thumb: thumb_url(pl),
+                        });
+                    }
+                }
+                return;
+            }
+            if let Some(lockup) = map.get("lockupViewModel") {
+                let ctype = lockup["contentType"].as_str().unwrap_or("");
+                let meta = &lockup["metadata"]["lockupMetadataViewModel"];
+                let title = label(&meta["title"]["content"]);
+                let rows = meta["metadata"]["contentMetadataViewModel"]["metadataRows"]
+                    .as_array();
+                let mut author = String::new();
+                let mut views = String::new();
+                let mut published = String::new();
+                if let Some(rows) = rows {
+                    if let Some(first) = rows.first() {
+                        author = label(&first["metadataParts"][0]["text"]["content"]);
+                    }
+                    let mut extra = rows
+                        .iter()
+                        .skip(1)
+                        .flat_map(|r| r["metadataParts"].as_array().into_iter().flatten())
+                        .map(|p| label(&p["text"]["content"]))
+                        .filter(|s| !s.is_empty());
+                    views = extra.next().unwrap_or_default();
+                    published = extra.next().unwrap_or_default();
+                }
+                let badge = find(lockup, "thumbnailBadgeViewModel", 0)
+                    .map(|b| label(&b["text"]))
+                    .unwrap_or_default();
+                if ctype == "LOCKUP_CONTENT_TYPE_VIDEO" && allow_video {
+                    let id = lockup["contentId"].as_str().unwrap_or("");
+                    if valid_id(id)
+                        && !title.is_empty()
+                        && seen.insert(format!("video:{id}"))
+                    {
+                        let mut thumb = thumb_url(lockup);
+                        if thumb.is_empty() {
+                            thumb = format!("https://i.ytimg.com/vi/{id}/mqdefault.jpg");
+                        }
+                        out.push(SearchItem {
+                            kind: "video".into(),
+                            id: id.into(),
+                            title,
+                            author,
+                            duration: badge,
+                            views,
+                            published,
+                            count: String::new(),
+                            thumb,
+                        });
+                    }
+                } else if ctype == "LOCKUP_CONTENT_TYPE_PLAYLIST" && allow_playlist {
+                    let id = lockup["contentId"]
+                        .as_str()
+                        .map(|s| s.strip_prefix("VL").unwrap_or(s))
+                        .unwrap_or("");
+                    if valid_playlist_id(id)
+                        && !id.starts_with("RD")
+                        && !title.is_empty()
+                        && seen.insert(format!("playlist:{id}"))
+                    {
+                        out.push(SearchItem {
+                            kind: "playlist".into(),
+                            id: id.into(),
+                            title,
+                            author,
+                            duration: String::new(),
+                            views: String::new(),
+                            published: String::new(),
+                            count: badge,
+                            thumb: thumb_url(lockup),
+                        });
+                    }
+                }
+                return;
+            }
+            for name in [
+                "contents",
+                "itemSectionRenderer",
+                "sectionListRenderer",
+                "shelfRenderer",
+                "richItemRenderer",
+                "gridRenderer",
+                "horizontalListRenderer",
+                "richGridRenderer",
+                "richShelfRenderer",
+                "twoColumnSearchResultsRenderer",
+                "primaryContents",
+                "twoColumnBrowseResultsRenderer",
+                "tabs",
+                "tabRenderer",
+                "content",
+                "items",
+                "results",
+                "onResponseReceivedActions",
+                "appendContinuationItemsAction",
+                "continuationItems",
+            ] {
+                if let Some(child) = map.get(name) {
+                    parse_search_items(child, want_kind, out, seen, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 pub fn valid_playlist_id(id: &str) -> bool {
     (2..=180).contains(&id.len())
@@ -1285,26 +1786,43 @@ async fn formats(
         let reason = label(&data["playabilityStatus"]["reason"]);
         return Err(format!("YouTube: {status} {reason}"));
     }
+    let mut title = label(&data["videoDetails"]["title"]).trim().to_string();
+    if title.is_empty() {
+        title = label(&data["microformat"]["playerMicroformatRenderer"]["title"])
+            .trim()
+            .to_string();
+    }
+    let mut author = label(&data["videoDetails"]["author"]).trim().to_string();
+    if author.is_empty() {
+        author = label(&data["microformat"]["playerMicroformatRenderer"]["ownerChannelName"])
+            .trim()
+            .to_string();
+    }
     let track = Track {
         id: id.into(),
-        title: label(&data["videoDetails"]["title"]),
-        author: label(&data["videoDetails"]["author"]),
+        title,
+        author,
     };
     let mut candidates: Vec<_> = data["streamingData"]["adaptiveFormats"]
         .as_array()
         .into_iter()
         .flatten()
         .filter(|item| {
-            matches!(item["itag"].as_u64(), Some(249..=251))
+            matches!(item["itag"].as_u64(), Some(249..=251 | 774))
                 && item["mimeType"]
                     .as_str()
                     .is_some_and(|m| m.starts_with("audio/webm"))
         })
         .collect();
     candidates.sort_by_key(|v| {
+        let rate = v["averageBitrate"]
+            .as_u64()
+            .or_else(|| v["bitrate"].as_u64())
+            .unwrap_or(0);
         std::cmp::Reverse((
             v["audioTrack"]["audioIsDefault"] != false,
             v["isDrc"] != true,
+            rate,
             v["itag"].as_u64(),
         ))
     });
@@ -1321,6 +1839,10 @@ async fn formats(
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or_default() as f64
             / 1000.0;
+        let bitrate = item["averageBitrate"]
+            .as_u64()
+            .or_else(|| item["bitrate"].as_u64())
+            .unwrap_or(0);
         return Ok((
             track,
             Stream {
@@ -1331,6 +1853,7 @@ async fn formats(
                 duration,
                 ready,
                 itag: item["itag"].as_u64().unwrap(),
+                bitrate,
             },
         ));
     }
@@ -1708,5 +2231,157 @@ mod tests {
                 email: "main@example.com".into(),
             }
         );
+
+        let tv_accounts = json!({
+            "contents": [{
+                "accountSectionListRenderer": {
+                    "contents": [{
+                        "accountItemSectionRenderer": {
+                            "header": {
+                                "googleAccountHeaderRenderer": {
+                                    "name": {"simpleText": "Alex"},
+                                    "email": {"simpleText": "alex@gmail.com"}
+                                }
+                            },
+                            "contents": [{
+                                "accountItem": {
+                                    "accountName": {"runs": [{"text": "Alex TV"}]},
+                                    "accountByline": {"runs": [{"text": "@alextv"}]},
+                                    "isSelected": true
+                                }
+                            }]
+                        }
+                    }]
+                }
+            }]
+        });
+        assert_eq!(
+            parse_account_profile(&tv_accounts),
+            AccountProfile {
+                name: "Alex".into(),
+                handle: "@alextv".into(),
+                email: "alex@gmail.com".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn encodes_youtube_search_filter_params() {
+        let f = |kind: &str, sort: &str, date: &str, duration: &str, live: bool| SearchFilter {
+            kind: kind.into(),
+            sort: sort.into(),
+            date: date.into(),
+            duration: duration.into(),
+            live,
+        };
+        assert_eq!(encode_search_params(&f("all", "relevance", "", "", false)), None);
+        assert_eq!(
+            encode_search_params(&f("video", "relevance", "", "", false)).as_deref(),
+            Some("EgIQAQ==")
+        );
+        assert_eq!(
+            encode_search_params(&f("playlist", "relevance", "", "", false)).as_deref(),
+            Some("EgIQAw==")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "date", "", "", false)).as_deref(),
+            Some("CAI=")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "views", "", "", false)).as_deref(),
+            Some("CAM=")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "relevance", "today", "", false)).as_deref(),
+            Some("EgIIAg==")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "relevance", "", "short", false)).as_deref(),
+            Some("EgIYAQ==")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "relevance", "", "long", false)).as_deref(),
+            Some("EgIYAg==")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "relevance", "", "medium", false)).as_deref(),
+            Some("EgIYAw==")
+        );
+        assert_eq!(
+            encode_search_params(&f("all", "relevance", "", "", true)).as_deref(),
+            Some("EgJAAQ==")
+        );
+        assert!(
+            encode_search_params(&f("video", "views", "week", "medium", false)).is_some()
+        );
+        assert_eq!(
+            encode_search_params(&f("playlist", "relevance", "", "short", true)).as_deref(),
+            Some("EgIQAw==")
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_search_items_and_microformat_title_fallback() {
+        let search_resp = json!({
+            "contents": [
+                {
+                    "videoRenderer": {
+                        "videoId": "dQw4w9WgXcQ",
+                        "title": {"runs": [{"text": "Never Gonna Give You Up"}]},
+                        "ownerText": {"runs": [{"text": "Rick Astley"}]},
+                        "lengthText": {"simpleText": "3:33"},
+                        "shortViewCountText": {"simpleText": "1.5B views"},
+                        "publishedTimeText": {"simpleText": "15 years ago"},
+                        "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg", "width": 320}]}
+                    }
+                },
+                {
+                    "playlistRenderer": {
+                        "playlistId": "PL_mix_123",
+                        "title": {"simpleText": "80s Classics"},
+                        "longBylineText": {"simpleText": "Curator"},
+                        "videoCountShortText": {"simpleText": "50"}
+                    }
+                }
+            ]
+        });
+
+        let mut vids = Vec::new();
+        parse_search_items(&search_resp, "video", &mut vids, &mut HashSet::new(), 0);
+        assert_eq!(vids.len(), 1);
+        assert_eq!(vids[0].id, "dQw4w9WgXcQ");
+        assert_eq!(vids[0].duration, "3:33");
+        assert_eq!(vids[0].views, "1.5B views");
+
+        let mut all = Vec::new();
+        parse_search_items(&search_resp, "all", &mut all, &mut HashSet::new(), 0);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1].kind, "playlist");
+        assert_eq!(all[1].count, "50");
+
+        let player_resp = json!({
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {"title": "", "author": ""},
+            "microformat": {
+                "playerMicroformatRenderer": {
+                    "title": {"simpleText": "ЗОМБИ (feat. DK, Серёга Пират)"},
+                    "ownerChannelName": "Джарахов"
+                }
+            },
+            "streamingData": {
+                "adaptiveFormats": [{
+                    "itag": 251,
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "url": "https://rr1---sn-test.googlevideo.com/videoplayback",
+                    "approxDurationMs": "317000"
+                }]
+            }
+        });
+        let (track, stream) = formats(&player_resp, "s0lMgCAmlgY", "ANDROID_VR", "vr", None, Instant::now())
+            .await
+            .unwrap();
+        assert_eq!(track.title, "ЗОМБИ (feat. DK, Серёга Пират)");
+        assert_eq!(track.author, "Джарахов");
+        assert!((stream.duration - 317.0).abs() < 0.01);
     }
 }

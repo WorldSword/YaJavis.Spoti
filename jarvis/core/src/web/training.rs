@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::{io, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(300);
+const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub fn routes() -> axum::Router<App> {
     use axum::routing::{get, post, put};
@@ -48,9 +48,24 @@ fn result(result: Result<Value, String>) -> Response {
     }
 }
 
-async fn list(State(app): State<App>) -> Response {
-    let (mode, limit) = app.store.with(|s| (s.train_mode, s.train_limit_mb));
-    result(request(&app, "training.records", json!({"mode":mode,"limit":limit})).await)
+#[derive(Deserialize, Default)]
+struct ListQuery {
+    #[serde(default)]
+    refresh: Option<u8>,
+}
+
+async fn list(State(app): State<App>, Query(q): Query<ListQuery>) -> Response {
+    let (mode, limit, voice_review) =
+        app.store.with(|s| (s.train_mode, s.train_limit_mb, s.train_voice_review));
+    let refresh = q.refresh.unwrap_or(0) != 0;
+    result(
+        request(
+            &app,
+            "training.records",
+            json!({"mode": mode, "limit": limit, "voice_review": voice_review, "refresh": refresh}),
+        )
+        .await,
+    )
 }
 
 async fn compact(State(app): State<App>) -> Response {
@@ -60,6 +75,7 @@ async fn compact(State(app): State<App>) -> Response {
 #[derive(Deserialize)]
 struct Settings {
     mode: Option<bool>,
+    voice_review: Option<bool>,
     limit_mb: Option<i64>,
 }
 
@@ -67,6 +83,9 @@ async fn settings(State(app): State<App>, Json(input): Json<Settings>) -> Respon
     match app.store.update(|s| -> std::io::Result<()> {
         if let Some(mode) = input.mode {
             s.train_mode = mode;
+        }
+        if let Some(voice_review) = input.voice_review {
+            s.train_voice_review = voice_review;
         }
         if let Some(limit) = input.limit_mb {
             s.train_limit_mb = limit.clamp(1, MAX_TRAIN_LIMIT_MB);
@@ -325,7 +344,8 @@ async fn stop_background(State(app): State<App>) -> Response {
     result(request(&app, "training.background.stop", Value::Null).await)
 }
 
-async fn connect(State(app): State<App>, Json(input): Json<Value>) -> Response {
+async fn connect(State(app): State<App>, body: Option<Json<Value>>) -> Response {
+    let input = body.map(|Json(v)| v).unwrap_or(Value::Null);
     result(request(&app, "training.background.connect", input).await)
 }
 
